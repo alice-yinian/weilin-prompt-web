@@ -39,6 +39,28 @@ python3 tools/import_weilin_db.py --plugin-root "/path/to/WeiLin-Comfyui-Tools" 
 - 旧版单文件库 `userdatas_<lang>.db`（无 uuid 列，会自动补齐并按父子关系回填）
 - 缺列 / 空 uuid / 重复 uuid / 孤儿行都会自动修复，并在报告中列出
 
+## CI 与发布
+
+- **CI**（`.github/workflows/ci.yml`）：普通分支推送与 PR 只做「版本号一致性 → 单元测试 → 多文件构建 → 单文件构建 → 导入工具自检」，产物作为 Actions artifact 保留 7 天，**不发布**。
+- **发布**（`.github/workflows/release.yml`）：只有 **`main` 分支上打 `v*.*.*` 标签**才发布；标签格式不符或标签不在 `main` 上时，只跑测试、跳过发布。
+
+```bash
+# 发版（版本号记得同步 package.json 与 src/utils/version.js，CI 会校验）
+node scripts/check-version.mjs --expect 0.3.3     # 本地确认
+git tag -a v0.3.3 -m "v0.3.3" && git push github v0.3.3
+```
+
+发布产物（GitHub Release）：
+
+| 文件 | 说明 |
+|---|---|
+| `weilin-prompt-web-vX.Y.Z-multi.zip` | 多文件静态站点（解压得 `dist/`，可直接托管 / 上传 Pages） |
+| `weilin-prompt-web-vX.Y.Z-single.html` | 单 HTML 文件（双击即用，`file://` 下也能跑） |
+| `weilin-prompt-web-vX.Y.Z-single.zip` | 同上，zip 形式方便下载 |
+| `SHA256SUMS.txt` | 全部产物的校验和 |
+
+发布说明自动取自 `CHANGELOG.md` 中对应版本的段落。
+
 ## 部署（例如 Cloudflare Pages）
 
 纯静态站点，构建命令 `npm run build`，输出目录 `dist`；hash 路由，不需要 SPA 回退规则。

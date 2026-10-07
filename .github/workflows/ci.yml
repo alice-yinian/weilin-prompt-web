@@ -1,0 +1,70 @@
+name: CI
+
+# 普通分支/PR：只做测试与构建（不做发布）
+# 发布由 release.yml 负责：仅当 main 上打 v*.*.* 标签时触发
+
+on:
+  push:
+    branches: ['**']
+    tags-ignore: ['**']
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  test-and-build:
+    name: 测试 + 双形态构建
+    runs-on: ubuntu-latest
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      - name: 安装 Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+
+      - name: 安装依赖
+        run: npm ci
+
+      - name: 版本号一致性
+        run: node scripts/check-version.mjs
+
+      - name: 单元测试
+        run: npm test
+
+      - name: 构建（多文件静态站点）
+        run: npm run build
+
+      - name: 构建（单 HTML 文件）
+        run: npm run build:single
+
+      - name: 导入工具自检
+        run: |
+          python3 -m py_compile tools/import_weilin_db.py
+          python3 tools/import_weilin_db.py --help > /dev/null
+          echo "✓ import_weilin_db.py 可用"
+
+      - name: 构建产物检查
+        run: |
+          test -f dist/index.html
+          test -f dist/_headers
+          test -f dist-single/index.html
+          ls -lh dist/index.html dist-single/index.html
+          echo "✓ 两种产物均生成"
+
+      - name: 上传构建产物（仅本次运行可见，用于排查）
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-preview-${{ github.sha }}
+          path: |
+            dist
+            dist-single
+          retention-days: 7

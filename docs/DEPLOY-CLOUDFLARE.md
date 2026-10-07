@@ -140,6 +140,18 @@ Pages 上更推荐多文件版（`dist`），因为 `index.html` 与 `assets/*` 
   部署在根域或子路径（如 `example.com/tools/`）都能正常加载资源。
 - **不要把 `dist-single/index.html` 当唯一入口**再配一套反向代理，没必要——直接部署 `dist/`。
 
+## 与 GitHub Release 的关系
+
+仓库里有两套流程，互不冲突：
+
+| 流程 | 触发 | 做什么 |
+|---|---|---|
+| `.github/workflows/ci.yml` | 任意分支推送 / PR | 只测试 + 双形态构建，不发布 |
+| `.github/workflows/release.yml` | `main` 上打 `v*.*.*` 标签 | 测试 → 构建 → 打 GitHub Release（多文件 zip / 单文件 html / 校验和） |
+| Cloudflare Pages | 推送到生产分支 `main` | 自动部署整站（与版本标签无关） |
+
+也就是说：**日常推 `main` 就会更新站点**；想留一个可下载的版本快照时再打标签。
+
 ## 排错
 
 | 现象 | 原因 / 处理 |

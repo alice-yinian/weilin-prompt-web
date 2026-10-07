@@ -16,3 +16,7 @@ __pycache__/
 .wrangler/
 .dev.vars
 .mf/
+
+# 发布流程在本地跑时产生的产物
+/release/
+release-notes.md

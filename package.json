@@ -1,7 +1,7 @@
 {
   "name": "weilin-prompt-web",
   "private": true,
-  "version": "0.1.0",
+  "version": "0.3.2",
   "type": "module",
   "license": "GPL-2.0-only",
   "description": "WeiLin-Comfyui-Tools 的纯静态网页版提示词助手（无后端，数据存储在浏览器 IndexedDB）",
@@ -13,7 +13,8 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "deploy:cf": "wrangler pages deploy dist --project-name=weilin-prompt-web",
-    "preview:cf": "wrangler pages dev dist"
+    "preview:cf": "wrangler pages dev dist",
+    "check-version": "node scripts/check-version.mjs"
   },
   "dependencies": {
     "idb": "^8.0.0",

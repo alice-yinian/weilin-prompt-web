@@ -1,0 +1,122 @@
+name: Release
+
+# 发布规则：
+#   - 只有 main 分支上的 v*.*.* 标签才会发布（检查标签提交是否为 origin/main 的祖先）
+#   - 标签格式不符、或标签不在 main 上：只跑测试，不发布
+#   - 产物：多文件站点 zip、单文件 html（另附 zip）、SHA256SUMS.txt
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+  workflow_dispatch:
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: 测试 → 构建 → 发布
+    runs-on: ubuntu-latest
+    steps:
+      - name: 检出代码（需要完整历史判断标签是否在 main 上）
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: 判定是否发布
+        id: guard
+        run: |
+          set -euo pipefail
+          TAG="${GITHUB_REF_NAME}"
+          echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
+
+          if [[ ! "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "publish=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::标签 ${TAG} 不符合 v*.*.* 格式，本次只跑测试"
+            exit 0
+          fi
+
+          git fetch --no-tags origin main
+          if git merge-base --is-ancestor "$GITHUB_SHA" origin/main; then
+            echo "publish=true" >> "$GITHUB_OUTPUT"
+            echo "::notice::标签 ${TAG} 在 main 上，将发布"
+          else
+            echo "publish=false" >> "$GITHUB_OUTPUT"
+            echo "::warning::标签 ${TAG} 的提交不在 main 上，本次只跑测试、不发布"
+          fi
+
+      - name: 安装 Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+
+      - name: 安装依赖
+        run: npm ci
+
+      - name: 版本号一致性
+        run: node scripts/check-version.mjs --expect "${{ steps.guard.outputs.tag }}"
+
+      - name: 单元测试
+        run: npm test
+
+      - name: 构建（多文件）
+        run: npm run build
+
+      - name: 构建（单文件）
+        run: npm run build:single
+
+      - name: 打包发布产物
+        if: steps.guard.outputs.publish == 'true'
+        run: |
+          set -euo pipefail
+          TAG="${{ steps.guard.outputs.tag }}"
+          mkdir -p release
+
+          # 用 Python 自带 zipfile 打包，避免依赖 zip 命令
+          # 多文件静态站点（解压后得到 dist/，直接丢给任意静态托管）
+          python3 -m zipfile -c "release/weilin-prompt-web-${TAG}-multi.zip" dist
+
+          # 单文件版：既给裸 html（双击即用），也给 zip（方便下载）
+          cp dist-single/index.html "release/weilin-prompt-web-${TAG}-single.html"
+          python3 -m zipfile -c "release/weilin-prompt-web-${TAG}-single.zip" dist-single
+
+          (cd release && sha256sum ./* > SHA256SUMS.txt)
+          echo "=== 产物清单 ==="
+          ls -lh release
+
+      - name: 生成发布说明（取自 CHANGELOG）
+        if: steps.guard.outputs.publish == 'true'
+        run: |
+          set -euo pipefail
+          VERSION="${{ steps.guard.outputs.tag }}"
+          VERSION="${VERSION#v}"
+          awk -v v="$VERSION" '$0 ~ "^## " v "$" {flag=1; next} /^## / {flag=0} flag' CHANGELOG.md > release-notes.md || true
+          if [ ! -s release-notes.md ]; then
+            echo "详见仓库 CHANGELOG.md（未找到 $VERSION 段落）" > release-notes.md
+          fi
+          echo "=== 发布说明 ==="
+          head -20 release-notes.md
+
+      - name: 发布 GitHub Release
+        if: steps.guard.outputs.publish == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          TAG="${{ steps.guard.outputs.tag }}"
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            echo "Release $TAG 已存在，覆盖上传产物"
+            gh release upload "$TAG" release/* --clobber
+          else
+            gh release create "$TAG" release/* \
+              --title "$TAG" \
+              --notes-file release-notes.md \
+              --verify-tag
+          fi
+          gh release view "$TAG" --json url,assets --jq '{url: .url, assets: [.assets[].name]}'
