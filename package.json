@@ -14,7 +14,8 @@
     "test:watch": "vitest",
     "deploy:cf": "wrangler pages deploy dist --project-name=weilin-prompt-web",
     "preview:cf": "wrangler pages dev dist",
-    "check-version": "node scripts/check-version.mjs"
+    "check-version": "node scripts/check-version.mjs",
+    "check-lock": "node scripts/check-lock.mjs"
   },
   "dependencies": {
     "idb": "^8.0.0",

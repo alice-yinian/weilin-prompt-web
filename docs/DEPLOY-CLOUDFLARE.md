@@ -3,7 +3,7 @@
 本项目是**纯静态站点**：没有服务端、没有 Cloudflare Functions / D1 / KV 依赖。
 词库、译文缓存、预览图都存在**访问者自己的浏览器**（IndexedDB）里，站点只负责发文件。
 
-- 构建命令：`npm run build`
+- 构建命令：`npm run build`（安装用 `npm ci`，锁文件已覆盖全部平台可选依赖，npm 10/11 均实测通过）
 - 输出目录：`dist`
 - 路由：hash 路由（`/#/editor`），所以**不需要** SPA 回退规则，也不会出现刷新 404
 - 体积：`dist/` 约 0.6 MB（Pages 免费版限制是单文件 25 MB / 20000 个文件，余量很大）
@@ -61,7 +61,8 @@ Pages 项目 → **Custom domains** → Add a custom domain。
 
 | 报错 | 处理 |
 |---|---|
-| `npm ci` 报 lock 与 package.json 不一致 | 本地跑一次 `npm install` 后提交更新过的 `package-lock.json` |
+| `npm ci` 报 `` `npm ci` can only install packages when your package.json and package-lock.json are in sync. Missing: @rollup/rollup-xxx from lock file `` | 锁文件缺「平台可选依赖」（本仓库 2026-10 遇到过一次：只有 19/25 个 `@rollup/rollup-*`）。修复：`npm install --package-lock-only --no-audit --no-fund` 后提交 `package-lock.json`；本地先用 `npm run check-lock` 体检 |
+| `npm ci` 报 lock 与 package.json 版本/依赖不一致 | 同上，重新生成锁文件后提交 |
 | `Cannot find module 'vite'` / Node 版本错误 | 设 `NODE_VERSION=22` |
 | 部署成功但页面白屏、控制台 404 | Build output directory 不是 `dist`，或 Root directory 填错了 |
 | GitHub 仓库列表里找不到自己的仓库 | 到 GitHub → Settings → Applications → Cloudflare Pages 里把该仓库加进授权范围 |

@@ -41,7 +41,8 @@ python3 tools/import_weilin_db.py --plugin-root "/path/to/WeiLin-Comfyui-Tools" 
 
 ## CI 与发布
 
-- **CI**（`.github/workflows/ci.yml`）：普通分支推送与 PR 只做「版本号一致性 → 单元测试 → 多文件构建 → 单文件构建 → 导入工具自检」，产物作为 Actions artifact 保留 7 天，**不发布**。
+- **CI**（`.github/workflows/ci.yml`）：普通分支推送与 PR 只做「依赖安装（用 npm 11 严格校验）→ 锁定文件体检 → 版本号一致性 → 单元测试 → 多文件构建 → 单文件构建」，产物作为 Actions artifact 保留 7 天，**不发布**。
+  本地可用 `npm run check-lock` 提前体检锁定文件（缺平台可选依赖会让 `npm ci` 在部分 npm 版本上失败）。
 - **发布**（`.github/workflows/release.yml`）：只有 **`main` 分支上打 `v*.*.*` 标签**才发布；标签格式不符或标签不在 `main` 上时，只跑测试、跳过发布。
 
 ```bash

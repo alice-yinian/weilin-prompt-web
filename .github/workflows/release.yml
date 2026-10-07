@@ -56,8 +56,11 @@ jobs:
           node-version: '22'
           cache: npm
 
-      - name: 安装依赖
-        run: npm ci
+      - name: 安装依赖（npm 11 严格校验：缺平台可选依赖会直接报错）
+        run: npx --yes npm@11 ci --no-audit --no-fund
+
+      - name: 依赖树体检（锁定文件必须覆盖全部平台包）
+        run: node scripts/check-lock.mjs
 
       - name: 版本号一致性
         run: node scripts/check-version.mjs --expect "${{ steps.guard.outputs.tag }}"
