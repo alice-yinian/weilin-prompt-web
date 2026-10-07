@@ -1,7 +1,7 @@
 {
   "name": "weilin-prompt-web",
   "private": true,
-  "version": "0.3.2",
+  "version": "0.3.3",
   "type": "module",
   "license": "GPL-2.0-only",
   "description": "WeiLin-Comfyui-Tools 的纯静态网页版提示词助手（无后端，数据存储在浏览器 IndexedDB）",
@@ -31,7 +31,7 @@
     "fake-indexeddb": "^6.0.0",
     "jsdom": "^26.0.0",
     "vite": "^6.0.9",
-    "vite-plugin-singlefile": "^2.1.0",
-    "vitest": "^3.0.5"
+    "vite-plugin-singlefile": "^2.3.3",
+    "vitest": "^4.1.11"
   }
 }

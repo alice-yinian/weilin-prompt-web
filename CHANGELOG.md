@@ -1,5 +1,20 @@
 # 更新日志
 
+## 0.3.3
+
+### 安全
+
+- **修复依赖漏洞（4 条 Dependabot 告警）**：`vitest` 3.2.7 → **4.1.11**，同时解决
+  `tinypool`（2 条 critical）与 `@vitest/mocker`（medium）——它们都是 vitest 的传递依赖，
+  必须整体升级。升级后 260 个单测与双形态构建全部通过
+- 新增 [SECURITY.md](./SECURITY.md)：记录已修项与**已知但暂不处理**的告警
+  （`braces` 通过 `vite-plugin-singlefile → micromatch` 引入，上游无修复版本、仅构建期、本仓库不可触发）
+
+### 修复
+
+- 锁定文件补齐平台可选依赖（`@rollup/rollup-*` 19 → 25 个），修复 Cloudflare 构建 `npm ci` 失败；
+  新增 `npm run check-lock` 体检脚本，CI 前置校验并改用 npm 11 严格安装
+
 ## 0.3.2
 
 ### 新增
