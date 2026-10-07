@@ -20,8 +20,15 @@
     <span v-if="token.isRaw" class="raw-mark">{{ token.isNewline ? '⏎' : '⇥' }}</span>
     <template v-else>
       <span class="text">{{ token.text }}</span>
-      <span v-if="token.translate" class="desc">{{ token.translate }}</span>
-      <span v-if="token.isHidden" class="hidden-mark">🚫</span>
+      <span
+        v-if="token.translate"
+        class="desc"
+        :class="`source-${token.translateSource || 'cache'}`"
+        :title="translateTooltip"
+        @dblclick.stop="$emit('edit-translation')"
+        >{{ token.translate }}</span
+      >
+      <span v-else class="desc placeholder" @dblclick.stop="$emit('edit-translation')">＋译</span>
     </template>
   </div>
 </template>
@@ -37,7 +44,7 @@
     dragging: { type: Boolean, default: false }
   })
 
-  defineEmits(['pick', 'toggle-hidden', 'drag-start', 'drop', 'drag-end'])
+  defineEmits(['pick', 'toggle-hidden', 'drag-start', 'drop', 'drag-end', 'edit-translation'])
 
   const tooltip = computed(() => {
     const token = props.token
@@ -52,8 +59,11 @@
     const parts = [token.text]
     if (token.translate) parts.push(token.translate)
     if (weight !== null) parts.push(`weight: ${weight}`)
+    if (token.isHidden) parts.push('hidden')
     return parts.join('\n')
   })
+
+  const translateTooltip = computed(() => '双击编辑译文')
 </script>
 
 <style scoped>
@@ -77,8 +87,16 @@
     background: var(--accent-soft);
   }
 
+  /* 隐藏标签：就地变暗 + 划去，仍不参与输出 */
   .chip.hidden {
-    opacity: 0.5;
+    opacity: 0.45;
+  }
+
+  .chip.hidden .text {
+    text-decoration: line-through;
+  }
+
+  .chip.hidden .desc {
     text-decoration: line-through;
   }
 
@@ -105,16 +123,28 @@
   }
 
   .desc {
-    color: var(--text-faint);
     font-family: inherit;
     font-size: 11px;
-    max-width: 140px;
+    max-width: 180px;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
   }
 
-  .hidden-mark {
-    font-size: 10px;
+  .desc.placeholder {
+    color: var(--text-faint);
+    opacity: 0.7;
+  }
+
+  .desc.source-library {
+    color: var(--text-dim);
+  }
+
+  .desc.source-api {
+    color: #4f9dff;
+  }
+
+  .desc.source-manual {
+    color: var(--ok);
   }
 </style>

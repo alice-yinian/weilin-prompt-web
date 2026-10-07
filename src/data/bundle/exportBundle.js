@@ -5,18 +5,21 @@ import { listAllTags } from '../repos/tags.js'
 import { listHistory } from '../repos/history.js'
 import { listFavorites } from '../repos/favorites.js'
 import { getLabelsPayload } from '../repos/labels.js'
+import { listTranslations } from '../repos/translations.js'
 import {
   BUNDLE_FORMAT,
   BUNDLE_FORMAT_VERSION,
   CHECKSUM_ALGORITHM,
   DEFAULT_GENERATOR,
+  normalizeBlob,
   normalizeDictEntry,
   normalizeFavorite,
   normalizeGroup,
   normalizeHistory,
   normalizeLabel,
   normalizeSubgroup,
-  normalizeTag
+  normalizeTag,
+  normalizeTranslation
 } from './schema.js'
 
 /**
@@ -36,6 +39,7 @@ const CHECKSUM_STORES = [
   STORES.HISTORY,
   STORES.FAVORITES,
   STORES.DICT,
+  STORES.TRANSLATIONS,
   STORES.LABELS
 ]
 
@@ -118,7 +122,8 @@ export async function exportBundle({
   const stores = []
   if (includeDict) stores.push(STORES.DICT)
   stores.push(STORES.BLOBS)
-  const totalSteps = stores.length + 5 // 前 5 步：groups/subgroups/tags/history/favorites(+labels)
+  // 固定步骤：groups/subgroups/tags/history/favorites/labels/translations
+  const totalSteps = stores.length + 7
   let step = 0
   const report = async (store, count) => {
     step += 1
@@ -154,12 +159,15 @@ export async function exportBundle({
     await report(STORES.DICT, dict.length)
   }
 
-  const data = { groups, subgroups, tags, history, favorites, dict, labels }
+  const translations = (await listTranslations()).map(normalizeTranslation)
+  await report(STORES.TRANSLATIONS, translations.length)
+
+  const data = { groups, subgroups, tags, history, favorites, dict, labels, translations }
 
   let images = 0
   if (includeBlobs) {
     const blobs = await withTx(STORES.BLOBS, 'readonly', (tx) => tx.store.getAll())
-    data.blobs = blobs.map((record) => ({ key: record.key, blob: record.blob ?? null }))
+    data.blobs = blobs.map(normalizeBlob)
     images = data.blobs.length
     warnings.push('预览图以 Blob 形式内联，JSON.stringify 无法序列化，需要走 zip 打包')
     await report(STORES.BLOBS, images)
@@ -173,6 +181,7 @@ export async function exportBundle({
     favorites: favorites.length,
     dict: dict.length,
     labels: labels.items.length,
+    translations: translations.length,
     images
   }
 

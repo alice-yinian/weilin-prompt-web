@@ -14,6 +14,10 @@
       <button :disabled="!selectedTagIds.length" @click="exportSelectedYAML">
         {{ t('tags.exportSelectedYAML') }}
       </button>
+      <span v-if="imageCount" class="faint hint">{{ t('tags.imagesCount', { n: imageCount }) }}</span>
+      <button v-if="imageCount" class="danger" :title="t('tags.removeImage')" @click="clearAllImages">
+        {{ t('tags.removeImage') }}
+      </button>
       <span class="spacer" />
       <span class="faint hint">{{ t('tags.importHint') }}</span>
     </div>
@@ -55,6 +59,7 @@
         :has-subgroup="!!activeSubgroupUuid"
         :select-hint="t('tags.selectSubgroupHint')"
         :sortable="!tagQuery.trim()"
+        :image-urls="imageUrls"
         @update:query="tagQuery = $event"
         @add="openCreateTag"
         @select="toggleTagSelection"
@@ -63,6 +68,8 @@
         @remove="removeTag"
         @move="onMoveTag"
         @delete-selected="deleteSelectedTags"
+        @upload-image="onUploadImage"
+        @remove-image="onRemoveImage"
       />
     </div>
 
@@ -96,8 +103,17 @@
 </template>
 
 <script setup>
-  import { computed, onMounted, reactive, ref } from 'vue'
+  import { computed, onMounted, onUnmounted, reactive, ref } from 'vue'
   import { useI18n } from 'vue-i18n'
+  import { compressImage } from '../../core/image/compress'
+  import {
+    clearTagImages,
+    deleteTagImage,
+    getTagImage,
+    getTagImages,
+    putTagImage,
+    tagImageCount
+  } from '../../data/repos/blobs'
   import { createGroup, deleteGroup, moveGroup, updateGroup } from '../../data/repos/groups'
   import {
     createSubgroup,
@@ -138,6 +154,9 @@
   const tags = ref([])
   const selectedTagIds = ref([])
   const tagQuery = ref('')
+  // t_uuid → 缩略图 objectURL（仅当前二级分组的标签，切换/卸载时回收）
+  const imageUrls = ref({})
+  const imageCount = ref(0)
 
   const editState = reactive({ open: false, type: 'group', mode: 'create', target: null, name: '', color: '' })
   const tagDialog = reactive({ open: false, target: null, text: '', desc: '', color: '' })
@@ -209,7 +228,12 @@
     return subgroup ? t('tags.targetCurrent', { name: subgroup.name }) : t('tags.needSubgroup')
   })
 
-  onMounted(refreshLibrary)
+  onMounted(async () => {
+    await refreshLibrary()
+    await refreshImageCount()
+  })
+
+  onUnmounted(revokeImageUrls)
 
   function countSubgroups(p_uuid) {
     return library.subgroups.filter((subgroup) => subgroup.p_uuid === p_uuid).length
@@ -241,9 +265,11 @@
   async function loadTags() {
     if (!activeSubgroupUuid.value) {
       tags.value = []
+      await loadImages()
       return
     }
     tags.value = await listTags(activeSubgroupUuid.value)
+    await loadImages()
   }
 
   async function selectGroup(p_uuid) {
@@ -345,7 +371,10 @@
     const message = t('tags.deleteGroupConfirm', { name: record.name, sub: subCount, tags: tagCount })
     if (!window.confirm(message)) return
     try {
+      const imageIds = await collectTagIdsUnderGroup(item.id)
       await deleteGroup(item.id)
+      await deleteTagImages(imageIds)
+      await refreshImageCount()
       await refreshLibrary()
       toast.success(t('toast.deleted'))
     } catch (error) {
@@ -360,12 +389,25 @@
     const message = t('tags.deleteSubgroupConfirm', { name: record.name, tags: tagCount })
     if (!window.confirm(message)) return
     try {
+      const imageIds = (await listTags(item.id)).map((tag) => tag.t_uuid)
       await deleteSubgroup(item.id)
+      await deleteTagImages(imageIds)
+      await refreshImageCount()
       await refreshLibrary()
       toast.success(t('toast.deleted'))
     } catch (error) {
       toast.error(t('toast.error', { msg: error.message || String(error) }))
     }
+  }
+
+  // 收集某个分组/二级分组下的 t_uuid（级联删除前先拿到，删完就查不到了）
+  async function collectTagIdsUnderGroup(p_uuid) {
+    const ids = new Set(
+      library.subgroups.filter((subgroup) => subgroup.p_uuid === p_uuid).map((subgroup) => subgroup.g_uuid)
+    )
+    if (!ids.size) return []
+    const all = await listAllTags()
+    return all.filter((tag) => ids.has(tag.g_uuid)).map((tag) => tag.t_uuid)
   }
 
   async function countTagsUnderGroup(p_uuid) {
@@ -429,10 +471,17 @@
     }
   }
 
+  // 删标签时一并清掉它的预览图，避免留下孤儿 blob
+  async function deleteTagImages(t_uuids) {
+    await Promise.all(t_uuids.map((t_uuid) => deleteTagImage(t_uuid).catch(() => false)))
+  }
+
   async function removeTag(tag) {
     if (!window.confirm(t('tags.deleteTagConfirm', { name: tag.text }))) return
     try {
       await deleteTags([tag.t_uuid])
+      await deleteTagImages([tag.t_uuid])
+      await refreshImageCount()
       selectedTagIds.value = selectedTagIds.value.filter((id) => id !== tag.t_uuid)
       await library.refresh()
       await loadTags()
@@ -448,6 +497,8 @@
     if (!window.confirm(t('tags.deleteSelectedConfirm', { n: ids.length }))) return
     try {
       await deleteTags(ids)
+      await deleteTagImages(ids)
+      await refreshImageCount()
       selectedTagIds.value = []
       await library.refresh()
       await loadTags()
@@ -480,6 +531,84 @@
     await moveTag(id, reference.t_uuid, direction < 0 ? 'before' : 'after')
     await library.refresh()
     await loadTags()
+  }
+
+  /* ---------- 预览图 ---------- */
+
+  async function loadImages() {
+    revokeImageUrls()
+    const ids = tags.value.map((tag) => tag.t_uuid)
+    if (!ids.length) return
+    const blobs = await getTagImages(ids)
+    const urls = {}
+    for (const [t_uuid, blob] of blobs) urls[t_uuid] = URL.createObjectURL(blob)
+    imageUrls.value = urls
+  }
+
+  // objectURL 不释放会一直占着内存，切换分组与卸载时统一回收
+  function revokeImageUrls() {
+    for (const url of Object.values(imageUrls.value)) URL.revokeObjectURL(url)
+    imageUrls.value = {}
+  }
+
+  async function refreshImageCount() {
+    imageCount.value = await tagImageCount()
+  }
+
+  async function refreshTagImage(t_uuid) {
+    const urls = { ...imageUrls.value }
+    if (urls[t_uuid]) URL.revokeObjectURL(urls[t_uuid])
+    const blob = await getTagImage(t_uuid)
+    if (blob) urls[t_uuid] = URL.createObjectURL(blob)
+    else delete urls[t_uuid]
+    imageUrls.value = urls
+  }
+
+  async function onUploadImage({ t_uuid, file }) {
+    if (!t_uuid || !file) return
+    try {
+      let blob = file
+      let mime = file.type || 'image/webp'
+      // 压缩失败时 compressImage 会把原图交还，照样能存
+      if (settings.imageCompress) {
+        const compressed = await compressImage(file, {
+          maxSize: settings.imageMaxSize,
+          quality: settings.imageQuality
+        })
+        blob = compressed.blob
+        mime = compressed.mime || mime
+      }
+      await putTagImage(t_uuid, blob, { mime, name: file.name })
+      await refreshTagImage(t_uuid)
+      await refreshImageCount()
+      toast.success(t('tags.imageSaved'))
+    } catch (error) {
+      toast.error(t('tags.imageFailed', { msg: error.message || String(error) }))
+    }
+  }
+
+  async function onRemoveImage(t_uuid) {
+    try {
+      await deleteTagImage(t_uuid)
+      await refreshTagImage(t_uuid)
+      await refreshImageCount()
+      toast.success(t('tags.imageRemoved'))
+    } catch (error) {
+      toast.error(t('toast.error', { msg: error.message || String(error) }))
+    }
+  }
+
+  async function clearAllImages() {
+    const label = `${t('tags.removeImage')}（${t('tags.imagesCount', { n: imageCount.value })}）`
+    if (!window.confirm(label)) return
+    try {
+      await clearTagImages()
+      await loadImages()
+      await refreshImageCount()
+      toast.success(t('tags.imageRemoved'))
+    } catch (error) {
+      toast.error(t('toast.error', { msg: error.message || String(error) }))
+    }
   }
 
   /* ---------- 导入 / 导出 ---------- */

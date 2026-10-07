@@ -5,22 +5,20 @@
       <button class="primary" @click="router.push('/data')">{{ t('editor.goImport') }}</button>
     </div>
 
-    <template v-else>
-      <div class="row wrap head">
-        <button class="primary" :disabled="busy" @click="translateAll">
-          {{ t('translate.translateAll') }}
-        </button>
-        <div class="spacer"></div>
-        <button class="ghost" :disabled="!segments.length" @click="copyAll">
-          {{ t('common.copy') }}
-        </button>
-      </div>
+    <div v-else class="body scroll">
+      <section class="block">
+        <div class="row wrap">
+          <button class="primary" :disabled="busyAll" @click="translateAll">
+            {{ t('translate.translateAll') }}
+          </button>
+          <div class="spacer"></div>
+          <button class="ghost" :disabled="!segments.length" @click="copyAll">
+            {{ t('translate.copyAll') }}
+          </button>
+        </div>
 
-      <div class="body scroll">
-        <p v-if="busy" class="faint">{{ t('common.loading') }}</p>
-        <p v-else-if="!segments.length && !editor.promptText.trim()" class="faint">
-          {{ t('translate.empty') }}
-        </p>
+        <p v-if="busyAll" class="faint hint">{{ t('common.loading') }}</p>
+        <p v-else-if="!segments.length" class="faint hint">{{ t('translate.empty') }}</p>
 
         <div v-for="(row, index) in segments" :key="`seg-${index}`" class="trans-row">
           <span class="swatch" :style="{ background: colorOf(row) }"></span>
@@ -30,37 +28,90 @@
         </div>
 
         <p v-if="segments.length" class="faint hint">{{ t('translate.missing') }}</p>
+      </section>
 
+      <section class="block">
         <div class="row wrap sub-head">
-          <button :disabled="busy || !tagCandidates.length" @click="translateTags">
-            {{ t('editor.translate') }}
+          <button :disabled="batchBusy || !missing.length" @click="translateMissing">
+            {{ t('translate.batchMissing') }}
           </button>
-          <span class="faint">{{ t('common.count', { n: tagCandidates.length }) }}</span>
-        </div>
-
-        <p v-if="!tagRows.length && !tagCandidates.length" class="faint">{{ t('translate.empty') }}</p>
-
-        <div v-for="(row, index) in tagRows" :key="`tag-${index}`" class="trans-row">
-          <span class="swatch" :style="{ background: colorOf(row) }"></span>
-          <span class="from faint">{{ row.original }}</span>
-          <span class="arrow">→</span>
-          <span class="to">{{ row.translated || '—' }}</span>
+          <span class="faint">{{ t('translate.missingCount', { n: missing.length }) }}</span>
           <div class="spacer"></div>
-          <button class="ghost mini" :disabled="!row.translated" @click="insert(row)">
-            {{ t('snippetInsert.insert') }}
+          <span v-if="batchBusy && progress" class="faint">
+            {{ t('translate.progress', progress) }}
+          </span>
+        </div>
+      </section>
+
+      <section class="block">
+        <div class="row wrap sub-head">
+          <span class="section-title">{{ t('editor.translate') }}</span>
+          <span class="faint">{{ t('common.count', { n: rows.length }) }}</span>
+        </div>
+
+        <p v-if="!rows.length" class="faint hint">{{ t('translate.empty') }}</p>
+
+        <div v-for="row in rows" :key="row.id" class="tag-row">
+          <div class="row tag-head">
+            <span class="from faint">{{ row.text }}</span>
+            <div class="spacer"></div>
+            <span v-if="row.source" class="badge">{{ sourceLabel(row.source) }}</span>
+          </div>
+          <input
+            v-model="row.draft"
+            class="draft"
+            :placeholder="t('translate.translationPlaceholder')"
+            @input="row.dirty = true"
+          />
+          <div class="row wrap actions">
+            <button class="ghost mini" :disabled="rowBusyId === row.id" @click="saveRow(row)">
+              {{ t('translate.saveTranslation') }}
+            </button>
+            <button class="ghost mini" :disabled="rowBusyId === row.id" @click="translateRow(row)">
+              {{ t('translate.translateSelected') }}
+            </button>
+            <button class="ghost mini" :disabled="!insertable(row)" @click="insertRow(row)">
+              {{ t('snippetInsert.insert') }}
+            </button>
+            <button
+              class="ghost mini"
+              :disabled="rowBusyId === row.id || !row.translated"
+              @click="clearRow(row)"
+            >
+              {{ t('editor.clearTranslation') }}
+            </button>
+          </div>
+        </div>
+      </section>
+
+      <section class="block">
+        <div class="row wrap sub-head">
+          <span class="section-title">{{ t('translate.cacheTitle') }}</span>
+          <span class="faint">{{ t('translate.cacheCount', { n: cache.count }) }}</span>
+          <div class="spacer"></div>
+          <button class="ghost mini" @click="exportCache('json')">
+            {{ t('translate.exportJson') }}
+          </button>
+          <button class="ghost mini" @click="exportCache('csv')">
+            {{ t('translate.exportCsv') }}
+          </button>
+          <button class="ghost mini" :disabled="!cache.count" @click="clearCache">
+            {{ t('translate.clearCache') }}
           </button>
         </div>
-      </div>
-    </template>
+      </section>
+    </div>
   </div>
 </template>
 
 <script setup>
-  import { computed, onMounted, ref } from 'vue'
+  import { computed, onMounted, ref, watch } from 'vue'
   import { useI18n } from 'vue-i18n'
   import { useRouter } from 'vue-router'
   import { useEditorStore } from '../../../stores/editor'
   import { useLibraryStore } from '../../../stores/library'
+  import { useSettingsStore } from '../../../stores/settings'
+  import { useTranslationStore } from '../../../stores/translation'
   import { extractText } from '../../../core/search/offlineTranslate'
   import { copyWithToast } from '../../../utils/clipboard'
   import { toast } from '../../../utils/toast'
@@ -69,10 +120,16 @@
   const router = useRouter()
   const editor = useEditorStore()
   const library = useLibraryStore()
+  const settings = useSettingsStore()
+  const cache = useTranslationStore()
 
   const segments = ref([])
-  const tagRows = ref([])
-  const busy = ref(false)
+  const rows = ref([])
+  const missing = ref([])
+  const busyAll = ref(false)
+  const batchBusy = ref(false)
+  const rowBusyId = ref('')
+  const progress = ref(null)
 
   // 词典 color_id → 颜色，与上游 danbooru_manager.vue 的 colorOptions 对齐
   const DICT_COLORS = [
@@ -90,20 +147,52 @@
 
   const BRACKET_PAIRS = { '(': ')', '[': ']', '{': '}', '<': '>' }
 
-  // 独立页面打开时 library 可能还没加载，hasData 会是空的
-  onMounted(async () => {
-    if (!library.loaded) await library.refresh()
-  })
+  const SOURCE_KEYS = {
+    library: 'translate.sourceLibrary',
+    cache: 'translate.sourceCache',
+    api: 'translate.sourceApi',
+    manual: 'translate.sourceManual'
+  }
 
   // 只翻译普通标签：raw token 无文本，LoRA 标签是 <wlr:…> 结构，查词库没有意义
   const tagCandidates = computed(() =>
     editor.visibleTokens.filter((token) => !token.isRaw && !token.isLoraTag)
   )
 
+  // token 的 id/text 变化时重建行，避免遗留已删除标签的译文行
+  const tokenKey = computed(() =>
+    tagCandidates.value.map((token) => `${token.id}:${token.text}`).join('|')
+  )
+
+  onMounted(async () => {
+    // 独立页面打开时 library 可能还没加载，hasData 会是空的
+    if (!library.loaded) await library.refresh()
+    await cache.refresh()
+    syncRows()
+    await refreshMissing()
+  })
+
+  watch(tokenKey, () => {
+    syncRows()
+    refreshMissing()
+  })
+
+  // store 会自动给 token 回填译文（词库/缓存/API），token 变化后行内容也要跟着刷新
+  watch(
+    () => editor.tokens,
+    () => syncRows(),
+    { deep: true }
+  )
+
   function colorOf(row) {
     if (row.color) return row.color
     if (row.colorId != null && row.colorId >= 0) return DICT_COLORS[row.colorId] || DICT_COLORS[0]
     return 'transparent'
+  }
+
+  function sourceLabel(source) {
+    const key = SOURCE_KEYS[source]
+    return key ? t(key) : source
   }
 
   // 词库键不带括号与权重后缀，查表前先剥掉括号层再剥权重（(cat:1.2) → cat）
@@ -127,6 +216,35 @@
     }
   }
 
+  function apiReady() {
+    const config = settings.apiTranslation || {}
+    return Boolean(config.enabled && config.baseUrl && config.model)
+  }
+
+  // 译文来源以 store 为准，用户正在编辑的草稿优先保留，避免输入被覆盖
+  function syncRows() {
+    const previous = new Map(rows.value.map((row) => [row.id, row]))
+    rows.value = tagCandidates.value.map((token) => {
+      const info = editor.translationOf(token)
+      const translated = info ? String(info.translated || '') : ''
+      const source = info ? info.source : ''
+      const old = previous.get(token.id)
+      const keepDraft = old && old.dirty && old.text === token.text
+      return {
+        id: token.id,
+        text: token.text,
+        translated,
+        source,
+        draft: keepDraft ? old.draft : translated,
+        dirty: false
+      }
+    })
+  }
+
+  async function refreshMissing() {
+    missing.value = await editor.missingTranslations()
+  }
+
   async function translateAll() {
     // 整段按逗号/换行切分后逐项翻译，结果保持原文顺序
     const parts = editor.promptText
@@ -138,29 +256,13 @@
       return
     }
 
-    busy.value = true
+    busyAll.value = true
     try {
-      const rows = []
-      for (const part of parts) rows.push(await lookup(part))
-      segments.value = rows
+      const next = []
+      for (const part of parts) next.push(await lookup(part))
+      segments.value = next
     } finally {
-      busy.value = false
-    }
-  }
-
-  async function translateTags() {
-    if (!tagCandidates.value.length) {
-      toast.info(t('translate.empty'))
-      return
-    }
-
-    busy.value = true
-    try {
-      const rows = []
-      for (const token of tagCandidates.value) rows.push(await lookup(token.text))
-      tagRows.value = rows
-    } finally {
-      busy.value = false
+      busyAll.value = false
     }
   }
 
@@ -171,10 +273,133 @@
     )
   }
 
-  function insert(row) {
-    if (!row.translated) return
-    editor.insertTag(row.translated)
+  async function translateMissing() {
+    if (!missing.value.length) {
+      toast.info(t('translate.empty'))
+      return
+    }
+    // 未配置接口时不发请求，避免用户误以为已调用
+    if (!apiReady()) {
+      toast.error(t('translate.apiNotConfigured'))
+      return
+    }
+
+    const texts = missing.value.map((item) => item.text)
+    batchBusy.value = true
+    progress.value = { done: 0, total: texts.length }
+    try {
+      // 译文去重后可能与入参数量不同，成功/失败以返回结果为准
+      const results = await editor.translateTexts(texts, {
+        onProgress: (info) => {
+          progress.value = { done: info.done, total: info.total }
+        }
+      })
+      const ok = results.filter((item) => item.translated).length
+      toast.success(t('translate.apiDone', { ok, fail: results.length - ok }))
+      syncRows()
+      await refreshMissing()
+    } catch (error) {
+      toast.error(t('translate.apiFailed', { msg: error?.message || String(error) }))
+    } finally {
+      batchBusy.value = false
+      progress.value = null
+    }
+  }
+
+  function translationValue(row) {
+    return String(row.draft || row.translated || '').trim()
+  }
+
+  function insertable(row) {
+    return Boolean(translationValue(row))
+  }
+
+  function insertRow(row) {
+    const value = translationValue(row)
+    if (!value) return
+    editor.insertTag(value)
     toast.success(t('toast.added'))
+  }
+
+  async function saveRow(row) {
+    const value = String(row.draft || '').trim()
+    rowBusyId.value = row.id
+    try {
+      // 保存空译文等价于清除，避免留下 source=manual 的空条目
+      if (!value) await editor.clearTranslation(row.id)
+      else await editor.saveManualTranslation(row.id, value)
+      toast.success(t('toast.saved'))
+      syncRows()
+      await refreshMissing()
+    } finally {
+      rowBusyId.value = ''
+    }
+  }
+
+  async function clearRow(row) {
+    rowBusyId.value = row.id
+    try {
+      await editor.clearTranslation(row.id)
+      row.draft = ''
+      row.dirty = false
+      syncRows()
+      await refreshMissing()
+    } finally {
+      rowBusyId.value = ''
+    }
+  }
+
+  async function translateRow(row) {
+    if (!apiReady()) {
+      toast.error(t('translate.apiNotConfigured'))
+      return
+    }
+
+    rowBusyId.value = row.id
+    try {
+      const results = await editor.translateTexts([row.text])
+      const result = results[0]
+      if (!result || result.error) {
+        const msg = (result && result.error) || 'empty'
+        toast.error(t('translate.apiFailed', { msg }))
+      } else {
+        row.draft = result.translated
+        row.dirty = false
+        syncRows()
+        await refreshMissing()
+      }
+    } catch (error) {
+      toast.error(t('translate.apiFailed', { msg: error?.message || String(error) }))
+    } finally {
+      rowBusyId.value = ''
+    }
+  }
+
+  function downloadText(filename, content, mime) {
+    const blob = new Blob([content], { type: `${mime};charset=utf-8` })
+    const url = URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = url
+    link.download = filename
+    document.body.appendChild(link)
+    link.click()
+    document.body.removeChild(link)
+    URL.revokeObjectURL(url)
+  }
+
+  async function exportCache(format) {
+    const { filename, content, count } = await cache.exportAll(format)
+    downloadText(filename, content, format === 'csv' ? 'text/csv' : 'application/json')
+    toast.success(t('translate.exportDone', { n: count }))
+  }
+
+  async function clearCache() {
+    if (!window.confirm(t('translate.clearConfirm'))) return
+    // clearAll 内部已重置 count，无需再读一次数据库
+    await cache.clearAll()
+    toast.success(t('translate.clearDone'))
+    syncRows()
+    await refreshMissing()
   }
 </script>
 
@@ -187,16 +412,24 @@
     flex: 1;
   }
 
-  .head {
-    flex-shrink: 0;
-  }
-
   .body {
     display: flex;
     flex-direction: column;
     gap: 4px;
     min-height: 0;
     flex: 1;
+  }
+
+  .block {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    padding-bottom: 8px;
+  }
+
+  .section-title {
+    font-weight: 600;
+    font-size: 13px;
   }
 
   .trans-row {
@@ -206,6 +439,19 @@
     padding: 4px 6px;
     border-radius: var(--radius-sm);
     background: var(--bg-elev-2);
+    font-size: 12px;
+  }
+
+  .tag-row {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    padding: 6px;
+    border-radius: var(--radius-sm);
+    background: var(--bg-elev-2);
+  }
+
+  .tag-head {
     font-size: 12px;
   }
 
@@ -228,6 +474,24 @@
 
   .to {
     word-break: break-all;
+  }
+
+  .draft {
+    width: 100%;
+    font-size: 12px;
+  }
+
+  .badge {
+    flex-shrink: 0;
+    padding: 1px 6px;
+    border-radius: 999px;
+    border: 1px solid var(--border-strong);
+    font-size: 11px;
+    color: var(--text-dim);
+  }
+
+  .actions {
+    gap: 4px;
   }
 
   .mini {

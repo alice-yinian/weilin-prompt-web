@@ -79,19 +79,134 @@
     </div>
 
     <div class="card">
+      <h3>{{ t('settings.apiTranslation') }}</h3>
+      <p class="faint hint">{{ t('settings.corsHint') }}</p>
+      <label class="check-row">
+        <input
+          type="checkbox"
+          :checked="settings.apiTranslation.enabled"
+          @change="settings.updateApiTranslation({ enabled: $event.target.checked })"
+        />
+        <span>{{ t('settings.apiEnabled') }}</span>
+      </label>
+      <div class="field">
+        <label>{{ t('settings.apiBaseUrl') }}</label>
+        <input
+          :value="settings.apiTranslation.baseUrl"
+          placeholder="https://api.siliconflow.cn/v1"
+          @change="settings.updateApiTranslation({ baseUrl: $event.target.value })"
+        />
+      </div>
+      <div class="field">
+        <label>{{ t('settings.apiKey') }}</label>
+        <input
+          type="password"
+          :value="settings.apiTranslation.apiKey"
+          autocomplete="off"
+          @change="settings.updateApiTranslation({ apiKey: $event.target.value })"
+        />
+        <span class="faint hint">{{ t('settings.apiKeyHint') }}</span>
+      </div>
+      <div class="field">
+        <label>{{ t('settings.apiModel') }}</label>
+        <input
+          :value="settings.apiTranslation.model"
+          placeholder="Qwen/Qwen2.5-7B-Instruct"
+          @change="settings.updateApiTranslation({ model: $event.target.value })"
+        />
+      </div>
+      <div class="row wrap">
+        <label class="mini-field">
+          <span class="faint">{{ t('settings.apiTemperature') }}</span>
+          <input
+            type="number"
+            step="0.1"
+            min="0"
+            max="2"
+            :value="settings.apiTranslation.temperature"
+            @change="settings.updateApiTranslation({ temperature: Number($event.target.value) })"
+          />
+        </label>
+        <label class="mini-field">
+          <span class="faint">{{ t('settings.apiBatchSize') }}</span>
+          <input
+            type="number"
+            step="1"
+            min="1"
+            max="100"
+            :value="settings.apiTranslation.batchSize"
+            @change="settings.updateApiTranslation({ batchSize: Number($event.target.value) })"
+          />
+        </label>
+        <button :disabled="testing" @click="runTestConnection">
+          {{ testing ? t('settings.testing') : t('settings.testConnection') }}
+        </button>
+      </div>
+      <div class="field">
+        <label>{{ t('settings.apiProxyPrefix') }}</label>
+        <input
+          :value="settings.apiTranslation.proxyPrefix"
+          placeholder="https://your-gateway.example.com/"
+          @change="settings.updateApiTranslation({ proxyPrefix: $event.target.value })"
+        />
+      </div>
+    </div>
+
+    <div class="card">
+      <h3>{{ t('settings.imageOptions') }}</h3>
+      <label class="check-row">
+        <input
+          type="checkbox"
+          :checked="settings.imageCompress"
+          @change="settings.setFlag('imageCompress', $event.target.checked)"
+        />
+        <span>{{ t('settings.imageCompress') }}</span>
+      </label>
+      <div class="row wrap">
+        <label class="mini-field">
+          <span class="faint">{{ t('settings.imageMaxSize') }}</span>
+          <input
+            type="number"
+            min="64"
+            max="2048"
+            step="32"
+            :disabled="!settings.imageCompress"
+            :value="settings.imageMaxSize"
+            @change="settings.setImageMaxSize($event.target.value)"
+          />
+        </label>
+        <label class="mini-field">
+          <span class="faint">{{ t('settings.imageQuality') }}</span>
+          <input
+            type="number"
+            min="0.1"
+            max="1"
+            step="0.05"
+            :disabled="!settings.imageCompress"
+            :value="settings.imageQuality"
+            @change="settings.setImageQuality($event.target.value)"
+          />
+        </label>
+      </div>
+      <p class="faint hint">{{ t('settings.imageHint') }}</p>
+    </div>
+
+    <div class="card">
       <button class="danger" @click="resetAll">{{ t('settings.resetAll') }}</button>
     </div>
   </div>
 </template>
 
 <script setup>
-  import { computed } from 'vue'
+  import { computed, ref } from 'vue'
   import { useI18n } from 'vue-i18n'
   import { useSettingsStore } from '../../stores/settings'
+  import { testConnection } from '../../core/translate/apiTranslate'
   import { toast } from '../../utils/toast'
 
   const { t } = useI18n()
   const settings = useSettingsStore()
+  const testing = ref(false)
 
   const conversionItems = [
     { key: 'comma', label: 'settings.convertComma' },
@@ -126,6 +241,22 @@
     settings.resetAll()
     toast.success(t('settings.saved'))
   }
+
+  async function runTestConnection() {
+    testing.value = true
+    try {
+      const result = await testConnection(settings.apiTranslation)
+      toast[result.ok ? 'success' : 'error'](
+        result.ok
+          ? t('settings.testOk', { msg: result.message })
+          : t('settings.testFail', { msg: result.message })
+      )
+    } catch (error) {
+      toast.error(t('settings.testFail', { msg: error.message || String(error) }))
+    } finally {
+      testing.value = false
+    }
+  }
 </script>
 
 <style scoped>
@@ -148,5 +279,21 @@
 
   code {
     font-size: 12px;
+  }
+
+  .hint {
+    font-size: 11px;
+    margin: 4px 0;
+  }
+
+  .mini-field {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+    font-size: 11px;
+  }
+
+  .mini-field input {
+    width: 110px;
   }
 </style>

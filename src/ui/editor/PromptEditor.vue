@@ -33,6 +33,14 @@
       <button class="ghost" @click="editor.insertRaw('newline')">{{ t('editor.insertNewline') }}</button>
       <button class="ghost" @click="editor.insertRaw('tab')">⇥ Tab</button>
       <button class="ghost" @click="editor.selectAll()">{{ t('common.all') }}</button>
+      <button
+        class="ghost"
+        :class="{ active: showHidden }"
+        :title="t('editor.showHiddenToggle')"
+        @click="showHidden = !showHidden"
+      >
+        {{ showHidden ? '👁' : '🚫' }} {{ t('editor.hiddenInline') }}
+      </button>
       <button class="ghost" :disabled="!editor.hiddenTokens.length" @click="editor.clearHidden()">
         {{ t('editor.clearDisabled') }}
       </button>
@@ -42,20 +50,19 @@
 
     <div class="chip-area scroll" @dragover.prevent @drop="onDropToEnd">
       <TagChip
-        v-for="token in editor.visibleTokens"
+        v-for="token in renderTokens"
         :key="token.id"
         :token="token"
         :selected="editor.selection.includes(token.id)"
         :dragging="draggingId === token.id"
         @pick="onPick(token, $event)"
         @toggle-hidden="editor.toggleHidden(token.id)"
+        @edit-translation="openTranslationDialog(token)"
         @drag-start="onDragStart(token, $event)"
         @drop="onDrop(token, $event)"
         @drag-end="draggingId = null"
       />
-      <span v-if="!editor.visibleTokens.length" class="faint empty-hint">
-        {{ t('editor.dragHint') }}
-      </span>
+      <span v-if="!renderTokens.length" class="faint empty-hint">{{ t('editor.dragHint') }}</span>
     </div>
 
     <div v-if="editor.selection.length" class="selection-bar row wrap">
@@ -64,7 +71,7 @@
       <span class="divider"></span>
       <input
         v-model="weightInput"
-        class="weight-input"
+        class="mini-input"
         type="number"
         step="0.05"
         :title="t('editor.setWeight')"
@@ -87,38 +94,37 @@
       <button class="ghost" @click="editor.clearSelection()">{{ t('editor.clearSelection') }}</button>
     </div>
 
-    <div class="hidden-zone">
-      <div class="row">
-        <span class="faint">{{ t('editor.hiddenZone') }}</span>
-        <span class="faint">· {{ t('editor.hiddenHint') }}</span>
-      </div>
-      <div class="chip-area scroll">
-        <TagChip
-          v-for="token in editor.hiddenTokens"
-          :key="token.id"
-          :token="token"
-          :selected="editor.selection.includes(token.id)"
-          @pick="onPick(token, $event)"
-          @toggle-hidden="editor.toggleHidden(token.id)"
-        />
-        <span v-if="!editor.hiddenTokens.length" class="faint">{{ t('editor.noHidden') }}</span>
-      </div>
+    <div v-if="editor.selection.length" class="selection-bar row wrap translation-bar">
+      <span class="faint">{{ t('translate.to') }}</span>
+      <input
+        v-model="translationDraft"
+        class="translation-input"
+        :placeholder="t('editor.translationPlaceholder')"
+        @keydown.enter="saveTranslationToSelection"
+      />
+      <button class="ghost" :disabled="translating" @click="translateSelection">
+        {{ translating ? t('translate.progress', { done: 0, total: 1 }) : t('editor.translateSelected') }}
+      </button>
+      <button class="ghost" :disabled="!translationDraft.trim()" @click="saveTranslationToSelection">
+        {{ t('editor.saveTranslation') }}
+      </button>
+      <button class="ghost" :disabled="editor.selection.length !== 1" @click="openTranslationDialogForSelection">
+        {{ t('editor.editTranslation') }}
+      </button>
     </div>
 
-    <FavoriteDialog
-      v-model="favoriteOpen"
-      :text="favoriteText"
-      :desc="favoriteDesc"
-    />
+    <FavoriteDialog v-model="favoriteOpen" :text="favoriteText" :desc="favoriteDesc" />
+    <TranslationDialog v-model="translationDialogOpen" :token="translationToken" />
   </div>
 </template>
 
 <script setup>
-  import { computed, nextTick, ref } from 'vue'
+  import { computed, nextTick, ref, watch } from 'vue'
   import { useI18n } from 'vue-i18n'
   import TagChip from './TagChip.vue'
   import AutocompleteList from './AutocompleteList.vue'
   import FavoriteDialog from './FavoriteDialog.vue'
+  import TranslationDialog from './TranslationDialog.vue'
   import { useEditorStore } from '../../stores/editor'
   import { useLibraryStore } from '../../stores/library'
   import { useSettingsStore } from '../../stores/settings'
@@ -141,8 +147,27 @@
   const favoriteOpen = ref(false)
   const favoriteText = ref('')
   const favoriteDesc = ref('')
+  const showHidden = ref(true)
+  const translationDraft = ref('')
+  const translating = ref(false)
+  const translationDialogOpen = ref(false)
+  const translationToken = ref(null)
 
   let autocompleteTimer = null
+
+  // 隐藏标签就地显示（变暗+划去），仍不参与输出
+  const renderTokens = computed(() =>
+    showHidden.value ? editor.tokens : editor.tokens.filter((token) => !token.isHidden)
+  )
+
+  // 选中单个标签时把它的译文带进输入框
+  watch(
+    () => editor.selection.join(','),
+    () => {
+      const selected = editor.selectionTokens().filter((token) => !token.isRaw)
+      translationDraft.value = selected.length === 1 ? selected[0].translate || '' : ''
+    }
+  )
 
   function onInput(event) {
     editor.setInput(event.target.value)
@@ -224,12 +249,8 @@
       editor.toggleSelection(token.id)
     } else {
       editor.setSelection([token.id])
-      weightInput.value = String(
-        (() => {
-          const matched = token.text.match(/:(-?\d+(?:\.\d+)?)$/)
-          return matched ? matched[1] : 1.2
-        })()
-      )
+      const matched = token.text.match(/:(-?\d+(?:\.\d+)?)$/)
+      weightInput.value = matched ? matched[1] : '1.2'
     }
   }
 
@@ -255,9 +276,7 @@
   function copySelection() {
     const selected = editor.selectionTokens().filter((token) => !token.isRaw && !token.isHidden)
     if (!selected.length) return
-    const text = selected
-      .map((token) => (token.isLoraTag ? `${token.text},` : isLoraTag(token.text) ? token.text : `${token.text},`))
-      .join(' ')
+    const text = selected.map((token) => `${token.text},`).join(' ')
     copyWithToast(text, t('common.copied'))
   }
 
@@ -281,7 +300,49 @@
     draggingId.value = null
   }
 
-  // 供外部（收藏/翻译面板）打开收藏对话框
+  function selectionTextTokens() {
+    return editor.selectionTokens().filter((token) => !token.isRaw && !token.isLoraTag)
+  }
+
+  async function translateSelection() {
+    const targets = selectionTextTokens()
+    if (!targets.length) return
+    translating.value = true
+    try {
+      const result = await editor.translateSelectedTokens(targets.map((token) => token.id))
+      if (result.ok) {
+        toast.success(t('translate.apiDone', { ok: result.ok, fail: result.fail }))
+        const first = targets[0]
+        const refreshed = editor.tokens.find((token) => token.id === first.id)
+        if (targets.length === 1) translationDraft.value = refreshed?.translate || translationDraft.value
+      } else {
+        toast.error(t('translate.apiFailed', { msg: '' }))
+      }
+    } finally {
+      translating.value = false
+    }
+  }
+
+  async function saveTranslationToSelection() {
+    const value = translationDraft.value.trim()
+    if (!value) return
+    for (const token of selectionTextTokens()) {
+      await editor.saveManualTranslation(token.id, value)
+    }
+    toast.success(t('toast.saved'))
+  }
+
+  function openTranslationDialog(token) {
+    translationToken.value = token
+    translationDialogOpen.value = true
+  }
+
+  function openTranslationDialogForSelection() {
+    const target = selectionTextTokens()[0]
+    if (target) openTranslationDialog(target)
+  }
+
+  // 供外部（收藏面板）打开收藏对话框
   function openFavoriteFor(token) {
     favoriteText.value = stripWeight(token?.text || editor.promptText)
     favoriteDesc.value = token?.translate || ''
@@ -334,6 +395,11 @@
     gap: 6px;
   }
 
+  .toolbar button.active {
+    color: var(--accent);
+    border-color: var(--accent);
+  }
+
   .selection-bar {
     gap: 5px;
     padding: 6px 8px;
@@ -349,9 +415,15 @@
     background: var(--border-strong);
   }
 
-  .weight-input {
+  .mini-input {
     width: 74px;
     padding: 3px 6px;
+  }
+
+  .translation-bar .translation-input {
+    flex: 1;
+    min-width: 140px;
+    padding: 3px 8px;
   }
 
   .chip-area {
@@ -363,22 +435,9 @@
     border: 1px solid var(--border);
     border-radius: var(--radius);
     background: var(--bg-input);
-    min-height: 74px;
-    max-height: 240px;
-  }
-
-  .hidden-zone {
-    border-top: 1px dashed var(--border);
-    padding-top: 8px;
-    display: flex;
-    flex-direction: column;
-    gap: 6px;
-    font-size: 12px;
-  }
-
-  .hidden-zone .chip-area {
-    min-height: 46px;
-    max-height: 120px;
+    min-height: 90px;
+    max-height: 340px;
+    flex: 1;
   }
 
   .empty-hint {

@@ -18,6 +18,8 @@ export const useLibraryStore = defineStore('library', () => {
   const tagsBySubgroup = ref({})
   const loaded = ref(false)
   const dictReady = ref(false)
+  // 词库文本(小写) → {desc, color}，供编辑器双语显示同步查表
+  const descMap = ref(new Map())
 
   const hasData = computed(() => groups.value.length > 0)
 
@@ -30,6 +32,17 @@ export const useLibraryStore = defineStore('library', () => {
     return map
   })
 
+  function syncDescMap(index) {
+    const map = new Map()
+    for (const entry of index?.entries || []) {
+      const key = String(entry.text || '').trim().toLowerCase()
+      if (!key) continue
+      map.set(key, { desc: entry.desc || '', color: entry.color || '' })
+    }
+    descMap.value = map
+    return map
+  }
+
   async function refresh() {
     const [groupRows, subgroupRows] = await Promise.all([listGroups(), listSubgroups()])
     groups.value = groupRows
@@ -41,7 +54,15 @@ export const useLibraryStore = defineStore('library', () => {
   }
 
   async function ensureTagIndex() {
-    return getTagIndex()
+    const index = await getTagIndex()
+    if (descMap.value.size === 0 && index?.entries?.length) syncDescMap(index)
+    return index
+  }
+
+  // 同步查词库释义（索引未就绪时返回空，由 ensureTagIndex 兜底）
+  function descOf(text) {
+    const key = String(text || '').trim().toLowerCase()
+    return key ? descMap.value.get(key) || null : null
   }
 
   async function ensureDictIndex() {
@@ -98,6 +119,7 @@ export const useLibraryStore = defineStore('library', () => {
     groups.value = []
     subgroups.value = []
     tagsBySubgroup.value = {}
+    descMap.value = new Map()
     dictReady.value = false
     invalidateTagIndex()
     loaded.value = false
@@ -111,6 +133,8 @@ export const useLibraryStore = defineStore('library', () => {
     loaded,
     dictReady,
     hasData,
+    descMap,
+    descOf,
     refresh,
     ensureTagIndex,
     ensureDictIndex,

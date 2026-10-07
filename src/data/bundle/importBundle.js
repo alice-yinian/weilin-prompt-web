@@ -249,7 +249,12 @@ async function importBlobsStore(rawRecords, ctx) {
       skipped[STORES.BLOBS] += 1
       return
     }
-    records.push({ key: String(raw.key), blob: raw.blob })
+    records.push({
+      key: String(raw.key),
+      blob: raw.blob,
+      mime: typeof raw.mime === 'string' ? raw.mime : '',
+      name: typeof raw.name === 'string' ? raw.name : ''
+    })
   })
   await report({ store: STORES.BLOBS, phase: 'start', done: 0, total: records.length })
   await putBatches(STORES.BLOBS, records, async (done) => {

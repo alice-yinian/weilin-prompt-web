@@ -44,6 +44,8 @@
         <div class="stat"><span class="faint">{{ t('data.statDict') }}</span><b>{{ stats.dict }}</b></div>
         <div class="stat"><span class="faint">{{ t('data.statHistory') }}</span><b>{{ stats.history }}</b></div>
         <div class="stat"><span class="faint">{{ t('data.statFavorites') }}</span><b>{{ stats.favorites }}</b></div>
+        <div class="stat"><span class="faint">{{ t('data.statTranslations') }}</span><b>{{ stats.translations }}</b></div>
+        <div class="stat"><span class="faint">{{ t('data.statImages') }}</span><b>{{ stats.images }}</b></div>
       </div>
       <p class="faint">
         {{ lastImportAt ? t('data.lastImport', { time: formatTime(lastImportAt) }) : t('data.never') }}
@@ -53,7 +55,13 @@
     <div class="card">
       <h3>{{ t('data.exportTitle') }}</h3>
       <p class="muted">{{ t('data.exportHint') }}</p>
-      <button :disabled="!stats.tags && !stats.dict" @click="doExport">{{ t('data.exportButton') }}</button>
+      <div class="row wrap">
+        <button :disabled="!stats.tags && !stats.dict" @click="doExport">{{ t('data.exportButton') }}</button>
+        <button :disabled="(!stats.tags && !stats.dict) || zipExporting" @click="doExportZip">
+          {{ t('data.exportWithImages') }}
+        </button>
+      </div>
+      <p class="faint hint">{{ t('data.exportZipHint') }}</p>
     </div>
 
     <div class="card">
@@ -75,17 +83,21 @@
   import { useI18n } from 'vue-i18n'
   import { importBundle } from '../../data/bundle/importBundle'
   import { exportBundle } from '../../data/bundle/exportBundle'
+  import { writeBundleZip } from '../../data/bundle/zip'
   import { listHistory } from '../../data/repos/history'
   import { listFavorites } from '../../data/repos/favorites'
+  import { tagImageCount } from '../../data/repos/blobs'
   import { clearAllData } from '../../data/repos/maintenance'
   import { useLibraryStore } from '../../stores/library'
   import { useEditorStore } from '../../stores/editor'
+  import { useTranslationStore } from '../../stores/translation'
   import { toast } from '../../utils/toast'
   import { formatBytes, formatTime, timestampSuffix } from '../../utils/format'
 
   const { t } = useI18n()
   const library = useLibraryStore()
   const editor = useEditorStore()
+  const translations = useTranslationStore()
 
   const fileInput = ref(null)
   const mode = ref('overwrite')
@@ -94,7 +106,17 @@
   const warnings = ref([])
   const lastImportSummary = ref('')
   const lastImportAt = ref(null)
-  const stats = ref({ groups: 0, subgroups: 0, tags: 0, dict: 0, history: 0, favorites: 0 })
+  const stats = ref({
+    groups: 0,
+    subgroups: 0,
+    tags: 0,
+    dict: 0,
+    history: 0,
+    favorites: 0,
+    translations: 0,
+    images: 0
+  })
+  const zipExporting = ref(false)
   const storageInfo = ref({ usage: 0, quota: 0, supported: false })
 
   const storageText = computed(() => {
@@ -110,10 +132,12 @@
   async function refreshAll() {
     // 直接打开数据页时 library store 可能还没加载，先补齐分组/二级分组缓存
     if (!library.loaded) await library.refresh()
-    const [libraryStats, history, favorites] = await Promise.all([
+    const [libraryStats, history, favorites, imageCount, translationTotal] = await Promise.all([
       library.stats(),
       listHistory(),
-      listFavorites()
+      listFavorites(),
+      tagImageCount(),
+      translations.refreshCount()
     ])
     stats.value = {
       groups: libraryStats.groups,
@@ -121,7 +145,9 @@
       tags: libraryStats.tags,
       dict: libraryStats.dict,
       history: history.length,
-      favorites: favorites.length
+      favorites: favorites.length,
+      translations: translationTotal,
+      images: imageCount
     }
     lastImportAt.value = localStorage.getItem('weilin_prompt_web_last_import') || null
     await refreshStorage()
@@ -187,6 +213,20 @@
     toast.success(t('data.exported', { name: 'weilin-prompt-bundle' }))
   }
 
+  async function doExportZip() {
+    zipExporting.value = true
+    try {
+      const bundle = await exportBundle({ includeBlobs: true })
+      const blob = await writeBundleZip(bundle)
+      downloadBlob(blob, `weilin-prompt-bundle-${timestampSuffix()}.zip`)
+      toast.success(t('data.exported', { name: 'weilin-prompt-bundle.zip' }))
+    } catch (error) {
+      toast.error(t('toast.error', { msg: error.message || String(error) }))
+    } finally {
+      zipExporting.value = false
+    }
+  }
+
   function downloadBlob(blob, name) {
     const url = URL.createObjectURL(blob)
     const link = document.createElement('a')
@@ -227,6 +267,11 @@
   h3 {
     margin: 0 0 8px;
     font-size: 14px;
+  }
+
+  .hint {
+    font-size: 11px;
+    margin: 8px 0 0;
   }
 
   .import-summary {

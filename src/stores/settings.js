@@ -3,6 +3,7 @@ import { ref } from 'vue'
 import { DEFAULT_CONVERT_OPTIONS } from '../core/prompt/convert'
 import { DEFAULT_AUTOCOMPLETE_LIMIT } from '../core/search/autocomplete'
 import { DEFAULT_TAG_COLOR } from '../core/exchange/constants'
+import { DEFAULT_API_TRANSLATION_CONFIG, normalizeConfig } from '../core/translate/apiTranslate'
 import { currentLocale, setLocale } from '../i18n'
 
 const STORAGE_KEY = 'weilin_prompt_web_settings'
@@ -27,6 +28,14 @@ export const useSettingsStore = defineStore('settings', () => {
   const autocompleteLimit = ref(stored.autocompleteLimit ?? DEFAULT_AUTOCOMPLETE_LIMIT)
   const defaultColor = ref(stored.defaultColor || DEFAULT_TAG_COLOR)
   const randomGroups = ref(stored.randomGroups || [])
+  // 编辑器右侧面板宽度（拖拽分隔条调整）
+  const panelWidth = ref(stored.panelWidth ?? 400)
+  // API 翻译配置（密钥只存在本机浏览器）
+  const apiTranslation = ref(normalizeConfig(stored.apiTranslation || DEFAULT_API_TRANSLATION_CONFIG))
+  // 标签预览图上传选项
+  const imageCompress = ref(stored.imageCompress ?? true)
+  const imageMaxSize = ref(stored.imageMaxSize ?? 512)
+  const imageQuality = ref(stored.imageQuality ?? 0.85)
 
   function persist() {
     localStorage.setItem(
@@ -38,7 +47,12 @@ export const useSettingsStore = defineStore('settings', () => {
         underscoreToSpace: underscoreToSpace.value,
         autocompleteLimit: autocompleteLimit.value,
         defaultColor: defaultColor.value,
-        randomGroups: randomGroups.value
+        randomGroups: randomGroups.value,
+        panelWidth: panelWidth.value,
+        apiTranslation: apiTranslation.value,
+        imageCompress: imageCompress.value,
+        imageMaxSize: imageMaxSize.value,
+        imageQuality: imageQuality.value
       })
     )
   }
@@ -86,11 +100,38 @@ export const useSettingsStore = defineStore('settings', () => {
   function setFlag(key, value) {
     if (key === 'bracketEscape') bracketEscape.value = !!value
     if (key === 'underscoreToSpace') underscoreToSpace.value = !!value
+    if (key === 'imageCompress') imageCompress.value = !!value
     persist()
   }
 
   function setRandomGroups(groups) {
     randomGroups.value = groups
+    persist()
+  }
+
+  function setPanelWidth(value) {
+    const num = Number(value)
+    if (!Number.isFinite(num)) return
+    panelWidth.value = Math.min(760, Math.max(260, Math.round(num)))
+    persist()
+  }
+
+  function setImageMaxSize(value) {
+    const num = Number(value)
+    if (!Number.isFinite(num)) return
+    imageMaxSize.value = Math.min(2048, Math.max(64, Math.round(num)))
+    persist()
+  }
+
+  function setImageQuality(value) {
+    const num = Number(value)
+    if (!Number.isFinite(num)) return
+    imageQuality.value = Math.min(1, Math.max(0.1, Number(num.toFixed(2))))
+    persist()
+  }
+
+  function updateApiTranslation(patch = {}) {
+    apiTranslation.value = normalizeConfig({ ...apiTranslation.value, ...patch })
     persist()
   }
 
@@ -102,6 +143,11 @@ export const useSettingsStore = defineStore('settings', () => {
     autocompleteLimit.value = DEFAULT_AUTOCOMPLETE_LIMIT
     defaultColor.value = DEFAULT_TAG_COLOR
     randomGroups.value = []
+    panelWidth.value = 400
+    apiTranslation.value = normalizeConfig(DEFAULT_API_TRANSLATION_CONFIG)
+    imageCompress.value = true
+    imageMaxSize.value = 512
+    imageQuality.value = 0.85
     applyTheme()
     persist()
   }
@@ -115,6 +161,11 @@ export const useSettingsStore = defineStore('settings', () => {
     autocompleteLimit,
     defaultColor,
     randomGroups,
+    panelWidth,
+    apiTranslation,
+    imageCompress,
+    imageMaxSize,
+    imageQuality,
     initFromStorage,
     setTheme,
     toggleTheme,
@@ -123,6 +174,10 @@ export const useSettingsStore = defineStore('settings', () => {
     setAutocompleteLimit,
     setDefaultColor,
     setFlag,
+    setPanelWidth,
+    setImageMaxSize,
+    setImageQuality,
+    updateApiTranslation,
     setRandomGroups,
     resetAll
   }

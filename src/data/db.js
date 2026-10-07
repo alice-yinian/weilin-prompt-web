@@ -2,7 +2,7 @@ import { openDB as idbOpenDB, deleteDB } from 'idb'
 import { DEFAULT_COLOR } from './util.js'
 
 export const DB_NAME = 'weilin-prompt-web'
-export const DB_VERSION = 1
+export const DB_VERSION = 2
 
 /** 对象仓库名（与开发计划 §4 表格一一对应） */
 export const STORES = Object.freeze({
@@ -14,6 +14,7 @@ export const STORES = Object.freeze({
   FAVORITES: 'favorites',
   LABELS: 'labels',
   DICT: 'dict',
+  TRANSLATIONS: 'translations',
   BLOBS: 'blobs'
 })
 
@@ -75,6 +76,11 @@ function upgrade(db) {
   if (!db.objectStoreNames.contains(STORES.DICT)) {
     const dict = db.createObjectStore(STORES.DICT, { keyPath: 'tag' })
     dict.createIndex('translate', 'translate')
+  }
+
+  if (!db.objectStoreNames.contains(STORES.TRANSLATIONS)) {
+    const translations = db.createObjectStore(STORES.TRANSLATIONS, { keyPath: 'textLower' })
+    translations.createIndex('updatedAt', 'updatedAt')
   }
 
   if (!db.objectStoreNames.contains(STORES.BLOBS)) {

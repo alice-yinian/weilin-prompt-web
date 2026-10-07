@@ -58,25 +58,36 @@
             class="tag-item"
             :style="{ borderLeftColor: tag.color }"
             @click="insert({ text: tag.text })"
+            @mouseenter="schedulePreview(tag, $event)"
+            @mousemove="movePreview($event)"
+            @mouseleave="hidePreview"
           >
-            <span class="tag-text">{{ tag.text }}</span>
-            <span class="tag-desc faint">{{ tag.desc }}</span>
+            <img v-if="imageUrls[tag.t_uuid]" class="thumb" :src="imageUrls[tag.t_uuid]" alt="" />
+            <span class="tag-body">
+              <span class="tag-text">{{ tag.text }}</span>
+              <span class="tag-desc faint">{{ tag.desc }}</span>
+            </span>
           </button>
           <p v-if="!currentTags.length" class="faint">{{ t('common.empty') }}</p>
         </div>
       </div>
     </template>
+
+    <Teleport to="body">
+      <img v-if="previewUrl" class="preview-float" :src="previewUrl" :style="previewStyle" alt="" />
+    </Teleport>
   </div>
 </template>
 
 <script setup>
-  import { computed, onMounted, ref } from 'vue'
+  import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
   import { useI18n } from 'vue-i18n'
   import { useRouter } from 'vue-router'
   import AutocompleteList from '../AutocompleteList.vue'
   import { useLibraryStore } from '../../../stores/library'
   import { useEditorStore } from '../../../stores/editor'
   import { useSettingsStore } from '../../../stores/settings'
+  import { getTagImages } from '../../../data/repos/blobs'
   import { toast } from '../../../utils/toast'
 
   const { t } = useI18n()
@@ -89,7 +100,11 @@
   const results = ref([])
   const collapsed = ref([])
   const activeSubgroupId = ref('')
+  const imageUrls = ref({})
+  const previewUrl = ref('')
+  const previewStyle = ref({})
   let timer = null
+  let previewTimer = null
 
   const currentTags = computed(() => library.tagsOfCached(activeSubgroupId.value))
 
@@ -102,6 +117,29 @@
     }
   })
 
+  onBeforeUnmount(() => {
+    revokeImageUrls()
+  })
+
+  function revokeImageUrls() {
+    for (const url of Object.values(imageUrls.value)) URL.revokeObjectURL(url)
+    imageUrls.value = {}
+  }
+
+  // 缩略图：只为当前二级分组的标签建 objectURL，切分组时全部回收
+  async function loadImages(tags) {
+    revokeImageUrls()
+    if (!tags.length) return
+    const map = await getTagImages(tags.map((tag) => tag.t_uuid))
+    const urls = {}
+    for (const [t_uuid, blob] of map.entries()) urls[t_uuid] = URL.createObjectURL(blob)
+    imageUrls.value = urls
+  }
+
+  watch(currentTags, (tags) => {
+    loadImages(tags)
+  })
+
   function toggleGroup(pUuid) {
     collapsed.value = collapsed.value.includes(pUuid)
       ? collapsed.value.filter((value) => value !== pUuid)
@@ -110,7 +148,8 @@
 
   async function selectSubgroup(subgroup) {
     activeSubgroupId.value = subgroup.g_uuid
-    await library.tagsOf(subgroup.g_uuid)
+    const tags = await library.tagsOf(subgroup.g_uuid)
+    await loadImages(tags)
   }
 
   function onSearch() {
@@ -135,9 +174,38 @@
   }
 
   async function insertAll() {
-    const texts = currentTags.value.map((tag) => normalize(tag.text))
-    editor.insertManyTags(texts)
+    editor.insertManyTags(currentTags.value.map((tag) => normalize(tag.text)))
     toast.success(t('toast.added'))
+  }
+
+  // 悬停 300ms 看大图（跟随鼠标，超出视口回贴）
+  function schedulePreview(tag, event) {
+    clearTimeout(previewTimer)
+    const url = imageUrls.value[tag.t_uuid]
+    if (!url) return
+    previewTimer = setTimeout(() => {
+      previewUrl.value = url
+      movePreview(event)
+    }, 300)
+  }
+
+  function movePreview(event) {
+    if (!previewUrl.value || !event) return
+    const size = 320
+    const margin = 12
+    const x = Math.min(event.clientX + 16, window.innerWidth - size - margin)
+    const y = Math.min(event.clientY + 16, window.innerHeight - size - margin)
+    previewStyle.value = {
+      left: `${Math.max(margin, x)}px`,
+      top: `${Math.max(margin, y)}px`,
+      maxWidth: `${size}px`,
+      maxHeight: `${size}px`
+    }
+  }
+
+  function hidePreview() {
+    clearTimeout(previewTimer)
+    previewUrl.value = ''
   }
 </script>
 
@@ -162,7 +230,7 @@
   }
 
   .group-list {
-    width: 46%;
+    width: 44%;
     border: 1px solid var(--border);
     border-radius: var(--radius-sm);
     padding: 4px;
@@ -219,26 +287,49 @@
     top: 0;
     background: var(--bg-elev);
     padding-bottom: 4px;
+    z-index: 1;
   }
 
   .tag-item {
     display: flex;
-    flex-direction: column;
-    align-items: flex-start;
-    gap: 1px;
+    align-items: center;
+    gap: 6px;
     border: 1px solid var(--border);
     border-left: 3px solid var(--accent);
     background: var(--bg-elev-2);
     text-align: left;
     font-size: 12px;
+    padding: 3px 6px;
+  }
+
+  .thumb {
+    width: 32px;
+    height: 32px;
+    flex-shrink: 0;
+    object-fit: cover;
+    border-radius: 3px;
+    border: 1px solid var(--border);
+  }
+
+  .tag-body {
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+    min-width: 0;
   }
 
   .tag-text {
     font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
 
   .tag-desc {
     font-size: 11px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
 
   .result-area {
@@ -259,5 +350,19 @@
     gap: 8px;
     padding: 24px 0;
     text-align: center;
+  }
+</style>
+
+<style>
+  /* Teleport 到 body 的浮层，不能用 scoped */
+  .preview-float {
+    position: fixed;
+    z-index: 9500;
+    border: 1px solid var(--border-strong);
+    border-radius: var(--radius);
+    box-shadow: var(--shadow);
+    background: var(--bg-elev);
+    pointer-events: none;
+    object-fit: contain;
   }
 </style>

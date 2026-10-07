@@ -7,6 +7,7 @@ import { listAllTags, createTag } from '../../src/data/repos/tags.js'
 import { listHistory, addHistory } from '../../src/data/repos/history.js'
 import { listFavorites, addFavorite } from '../../src/data/repos/favorites.js'
 import { getLabelsPayload, saveLabelsPayload } from '../../src/data/repos/labels.js'
+import { getTranslation, putTranslation } from '../../src/data/repos/translations.js'
 import { isDictIndexLoaded, loadDictIndex } from '../../src/data/repos/dict.js'
 import { importBundle } from '../../src/data/bundle/importBundle.js'
 import { exportBundle, verifyBundleChecksum, isChecksumAvailable } from '../../src/data/bundle/exportBundle.js'
@@ -260,6 +261,7 @@ describe('bundle/exportBundle', () => {
       favorites: 1,
       dict: 2,
       labels: 1,
+      translations: 0,
       images: 0
     })
     expect(bundle.source.hasImages).toBe(false)
@@ -308,5 +310,57 @@ describe('bundle/exportBundle', () => {
     } else {
       expect(bundle.checksum).toBeNull()
     }
+  })
+})
+
+describe('bundle/translations', () => {
+  it('默认导出译文并计入 counts，导入落库、checksum 覆盖', async () => {
+    await putTranslation('Cat', '猫', 'manual')
+    await putTranslation('Dog', '狗', 'api')
+
+    const bundle = await exportBundle()
+    expect(bundle.counts.translations).toBe(2)
+    expect(bundle.data.translations.map((item) => item.textLower).sort()).toEqual(['cat', 'dog'])
+    expect(bundle.data.translations[0]).not.toHaveProperty('id')
+
+    await resetDatabase()
+    const result = await importBundle(bundle, { mode: 'overwrite' })
+    expect(result.imported.translations).toBe(2)
+    expect(result.skipped.translations).toBe(0)
+    expect((await getTranslation('CAT')).translated).toBe('猫')
+
+    if (isChecksumAvailable()) {
+      expect(bundle.checksum.translations).toMatch(/^sha256:[0-9a-f]{64}$/)
+    }
+  })
+
+  it('导入按 textLower 归并，遵守 overwrite / merge / skip', async () => {
+    const data = {
+      translations: [
+        { text: 'Cat', translated: '包内猫', source: 'api', updatedAt: 5 },
+        { text: 'Bird', translated: '包内鸟', source: 'api', updatedAt: 6 }
+      ]
+    }
+
+    await putTranslation('cat', '库内猫', 'manual')
+    const merged = await importBundle(makeBundle(data), { mode: 'merge' })
+    expect(merged.imported.translations).toBe(1)
+    expect(merged.skipped.translations).toBe(1)
+    expect((await getTranslation('cat')).translated).toBe('库内猫')
+    expect((await getTranslation('BIRD')).translated).toBe('包内鸟')
+
+    await resetDatabase()
+    const skipped = await importBundle(makeBundle(data), { mode: 'skip' })
+    // 空库时两条都带 textLower，skip 模式没有冲突可跳，全部写入
+    expect(skipped.imported.translations).toBe(2)
+    expect(skipped.skipped.translations).toBe(0)
+    expect((await getTranslation('cat')).translated).toBe('包内猫')
+    expect((await getTranslation('bird')).translated).toBe('包内鸟')
+
+    await resetDatabase()
+    await putTranslation('cat', '库内猫', 'manual')
+    const overwritten = await importBundle(makeBundle(data), { mode: 'overwrite' })
+    expect(overwritten.imported.translations).toBe(2)
+    expect((await getTranslation('cat')).translated).toBe('包内猫')
   })
 })
