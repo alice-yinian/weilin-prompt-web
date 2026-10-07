@@ -123,6 +123,22 @@ describe('exchange/parseYAMLText', () => {
   })
 })
 
+describe('exchange/parseSQL 边界', () => {
+  it('标签文本里含分号时不丢数据（上游 split(\';\') 会丢）', () => {
+    const text = `INSERT OR REPLACE INTO "tag_tags" ("text", "desc", "color", "create_time", "g_uuid", "t_uuid") VALUES (';p', '眨眼舌头上伸', 'rgba(255, 123, 2, .4)', 1736580438, 'g-1', 't-1');
+INSERT OR REPLACE INTO "tag_tags" ("text", "desc", "color", "create_time", "g_uuid", "t_uuid") VALUES ('1girl', '1女孩', 'rgba(255, 123, 2, .4)', 1736580436, 'g-1', 't-2');`
+    const parsed = parseSQL(text)
+    expect(parsed.tags.map((tag) => tag.text)).toEqual([';p', '1girl'])
+    expect(parsed.skipped).toBe(0)
+  })
+
+  it('文本里的单引号双写与分号可同时还原', () => {
+    const text = `INSERT OR REPLACE INTO "tag_tags" ("text", "desc", "color", "create_time", "g_uuid", "t_uuid") VALUES ('a''b;c', 'x', 'rgba(255, 123, 2, .4)', 1, 'g', 't');`
+    const parsed = parseSQL(text)
+    expect(parsed.tags[0].text).toBe("a'b;c")
+  })
+})
+
 describe('exchange/parseImportFile', () => {
   it('按扩展名分派', () => {
     expect(parseImportFile('a.txt', '1girl,1女孩').tags).toHaveLength(1)

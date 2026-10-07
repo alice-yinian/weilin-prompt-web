@@ -1,13 +1,8 @@
 import { describe, it, expect, beforeEach } from 'vitest'
 import { resetDatabase, tagJson } from './helpers.js'
-import { getMeta, META_KEYS } from '../../src/data/db.js'
-import {
-  listHistory,
-  addHistory,
-  deleteHistory,
-  clearHistory,
-  clearAll
-} from '../../src/data/repos/history.js'
+import { getMeta, setMeta, META_KEYS } from '../../src/data/db.js'
+import { listHistory, addHistory, deleteHistory, clearHistory } from '../../src/data/repos/history.js'
+import { clearAllData } from '../../src/data/repos/maintenance.js'
 import {
   listFavorites,
   addFavorite,
@@ -17,7 +12,6 @@ import {
 import { createGroup, listGroups } from '../../src/data/repos/groups.js'
 import { createSubgroup, listSubgroups } from '../../src/data/repos/subgroups.js'
 import { createTag, listAllTags } from '../../src/data/repos/tags.js'
-import { setMeta } from '../../src/data/db.js'
 
 beforeEach(resetDatabase)
 
@@ -93,7 +87,7 @@ describe('repos/favorites', () => {
   })
 })
 
-describe('repos/history clearAll', () => {
+describe('repos/maintenance clearAllData', () => {
   it('清空全部仓库并返回各仓库条数', async () => {
     const group = await createGroup({ name: '人物' })
     const sub = await createSubgroup({ p_uuid: group.p_uuid, name: '对象' })
@@ -102,7 +96,7 @@ describe('repos/history clearAll', () => {
     await addFavorite({ tag: tagJson('1girl'), name: 'A' })
     await setMeta(META_KEYS.SETTINGS, { theme: 'dark' })
 
-    const counts = await clearAll()
+    const counts = await clearAllData()
     expect(counts.groups).toBe(1)
     expect(counts.subgroups).toBe(1)
     expect(counts.tags).toBe(1)

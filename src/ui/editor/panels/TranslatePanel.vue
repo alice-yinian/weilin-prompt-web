@@ -18,7 +18,9 @@
 
       <div class="body scroll">
         <p v-if="busy" class="faint">{{ t('common.loading') }}</p>
-        <p v-else-if="!segments.length" class="faint">{{ t('translate.empty') }}</p>
+        <p v-else-if="!segments.length && !editor.promptText.trim()" class="faint">
+          {{ t('translate.empty') }}
+        </p>
 
         <div v-for="(row, index) in segments" :key="`seg-${index}`" class="trans-row">
           <span class="swatch" :style="{ background: colorOf(row) }"></span>
@@ -36,7 +38,7 @@
           <span class="faint">{{ t('common.count', { n: tagCandidates.length }) }}</span>
         </div>
 
-        <p v-if="!tagRows.length" class="faint">{{ t('translate.empty') }}</p>
+        <p v-if="!tagRows.length && !tagCandidates.length" class="faint">{{ t('translate.empty') }}</p>
 
         <div v-for="(row, index) in tagRows" :key="`tag-${index}`" class="trans-row">
           <span class="swatch" :style="{ background: colorOf(row) }"></span>

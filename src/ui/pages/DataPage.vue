@@ -108,17 +108,18 @@
   onMounted(refreshAll)
 
   async function refreshAll() {
-    const [tags, dict, history, favorites] = await Promise.all([
-      library.ensureTagIndex(),
+    // 直接打开数据页时 library store 可能还没加载，先补齐分组/二级分组缓存
+    if (!library.loaded) await library.refresh()
+    const [libraryStats, history, favorites] = await Promise.all([
       library.stats(),
       listHistory(),
       listFavorites()
     ])
     stats.value = {
-      groups: library.groups.length,
-      subgroups: library.subgroups.length,
-      tags: tags?.entries?.length ?? 0,
-      dict: dict.dict ?? 0,
+      groups: libraryStats.groups,
+      subgroups: libraryStats.subgroups,
+      tags: libraryStats.tags,
+      dict: libraryStats.dict,
       history: history.length,
       favorites: favorites.length
     }
@@ -152,8 +153,8 @@
       })
       warnings.value = result.warnings || []
       lastImportSummary.value = t('data.importDone', {
-        imported: result.imported ?? 0,
-        skipped: result.skipped ?? 0
+        imported: result.imported?.total ?? 0,
+        skipped: result.skipped?.total ?? 0
       })
       const now = Date.now()
       localStorage.setItem('weilin_prompt_web_last_import', String(now))

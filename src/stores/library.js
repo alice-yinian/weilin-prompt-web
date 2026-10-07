@@ -2,23 +2,14 @@ import { defineStore } from 'pinia'
 import { computed, ref } from 'vue'
 import { listGroups } from '../data/repos/groups'
 import { listSubgroups } from '../data/repos/subgroups'
-import { listTags, listAllTags } from '../data/repos/tags'
-import { buildTagIndex, getTagIndex, invalidateTagIndex } from '../data/memoryIndex'
-import { loadDictIndex, dictSize } from '../data/repos/dict'
+import { listTags } from '../data/repos/tags'
+import { getTagIndex, invalidateTagIndex } from '../data/memoryIndex'
+import { dictSize, loadDictIndex, isDictIndexLoaded } from '../data/repos/dict'
 import { searchEntries } from '../core/search/autocomplete'
 import { createTranslationLookup, translatePhrase } from '../core/search/offlineTranslate'
 import { useSettingsStore } from './settings'
 
-const EMPTY_STATS = {
-  groups: 0,
-  subgroups: 0,
-  tags: 0,
-  dict: 0,
-  history: 0,
-  favorites: 0
-}
-
-// 词库数据：分组/二级分组/标签的内存缓存 + 词库索引（补全与翻译都走它）
+// 词库数据：分组/二级分组/标签的展示缓存；补全与翻译走内存索引（tags 全量 + 词典懒加载）
 export const useLibraryStore = defineStore('library', () => {
   const settings = useSettingsStore()
 
@@ -45,18 +36,18 @@ export const useLibraryStore = defineStore('library', () => {
     subgroups.value = subgroupRows
     tagsBySubgroup.value = {}
     invalidateTagIndex()
+    dictReady.value = isDictIndexLoaded()
     loaded.value = true
   }
 
   async function ensureTagIndex() {
-    return getTagIndex() || buildTagIndex(await listAllTags())
+    return getTagIndex()
   }
 
   async function ensureDictIndex() {
-    if (dictReady.value) return getTagIndex()
-    await loadDictIndex()
+    const entries = await loadDictIndex()
     dictReady.value = true
-    return getTagIndex()
+    return entries
   }
 
   async function tagsOf(g_uuid) {
@@ -71,31 +62,31 @@ export const useLibraryStore = defineStore('library', () => {
     return tagsBySubgroup.value[g_uuid] || []
   }
 
+  // 先在词库内匹配：命中不足时才用词典补足。
+  // 词典有 14 万条，首次加载较慢，因此第一次改为“后台开始加载 + 本次先返回词库结果”，
+  // 避免输入稀有词时界面卡住等词典加载。
   async function autocomplete(query, limit) {
-    const index = await ensureTagIndex()
-    if (!index) return []
-    if ((index.entries?.length ?? 0) > 0 && !dictReady.value) {
-      // 词典懒加载：首次补全时顺带灌入，命中不足时才有意义
-      await ensureDictIndex()
+    const index = await getTagIndex()
+    const max = limit ?? settings.autocompleteLimit
+    const tagOnly = searchEntries(query, { tags: index.entries, dict: [] }, max)
+    if (tagOnly.length >= max) return tagOnly
+    if (isDictIndexLoaded()) {
+      const dictEntries = await loadDictIndex()
+      return searchEntries(query, { tags: index.entries, dict: dictEntries }, max)
     }
-    const dictEntries = dictReady.value ? (getTagIndex()?.dictEntries ?? []) : []
-    return searchEntries(query, { tags: index.entries, dict: dictEntries }, limit ?? settings.autocompleteLimit)
+    ensureDictIndex()
+    return tagOnly
   }
 
   async function translate(phrase) {
-    const index = await ensureTagIndex()
-    await ensureDictIndex()
-    const maps = createTranslationLookup({
-      tags: index?.entries ?? [],
-      dict: getTagIndex()?.dictEntries ?? []
-    })
+    const [index, dictEntries] = await Promise.all([ensureTagIndex(), ensureDictIndex()])
+    const maps = createTranslationLookup({ tags: index.entries, dict: dictEntries })
     return translatePhrase(phrase, { maps })
   }
 
   async function stats() {
     const index = await ensureTagIndex()
     return {
-      ...EMPTY_STATS,
       groups: groups.value.length,
       subgroups: subgroups.value.length,
       tags: index?.entries?.length ?? 0,

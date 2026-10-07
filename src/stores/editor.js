@@ -1,6 +1,7 @@
 import { defineStore } from 'pinia'
 import { computed, ref } from 'vue'
-import { tokenize, createToken, serialize, NEWLINE, TAB } from '../core/prompt/tokenize'
+import { tokenize, createToken, NEWLINE, TAB } from '../core/prompt/tokenize'
+import { serialize } from '../core/prompt/serialize'
 import { applyWeight } from '../core/prompt/weight'
 import { toggleBracket, addBracket, removeBracket } from '../core/prompt/brackets'
 import { buildLoraTag, parseLoraTag, isLoraTag, updateLoraTag } from '../core/prompt/loraTag'
@@ -285,7 +286,7 @@ export const useEditorStore = defineStore('editor', () => {
   function normalizeSavedToken(item) {
     if (typeof item === 'string') return createToken(item)
     const text = String(item.text ?? '')
-    const isRaw = item.isRaw ?? text === NEWLINE || text === TAB
+    const isRaw = item.isRaw ?? (text === NEWLINE || text === TAB)
     return {
       id: item.id || createToken(text).id,
       text,

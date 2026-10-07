@@ -24,11 +24,11 @@ export async function getDictEntries(tags) {
   const keys = toArray(tags).filter((tag) => typeof tag === 'string' && tag.length > 0)
   if (keys.length === 0) return []
   return withTx(STORES.DICT, 'readonly', async (tx) => {
-    const records = await tx.store.getAll(keys)
-    const byTag = new Map(records.map((record) => [record.tag, record]))
+    // 逐键 get 而非 getAll(keys)：后者在部分实现（fake-indexeddb）下不生效，
+    // 且这里的调用方一次只查少量 tag
+    const records = await Promise.all(keys.map((key) => tx.store.get(key)))
     const result = []
-    for (const key of keys) {
-      const record = byTag.get(key)
+    for (const record of records) {
       if (record) result.push(record)
     }
     return result
@@ -41,7 +41,7 @@ export async function getDictEntry(tag) {
   return withTx(STORES.DICT, 'readonly', async (tx) => (await tx.store.get(tag)) ?? null)
 }
 
-/** 懒加载全量轻量索引 `[{tag, translate, color_id}]`，只灌一次 */
+/** 懒加载全量轻量索引 `[{tag, translate, color_id}]`，只灌一次；返回该数组（同一引用） */
 export async function loadDictIndex({ force = false } = {}) {
   if (force) invalidateDictIndex()
   if (dictIndexCache) return dictIndexCache
@@ -62,14 +62,13 @@ export async function loadDictIndex({ force = false } = {}) {
         }
         return result
       })
-      dictIndexCache = { entries }
-      return dictIndexCache
+      dictIndexCache = entries
+      return entries
     })().finally(() => {
       dictIndexLoading = null
     })
   }
-  const loaded = await dictIndexLoading
-  return loaded
+  return dictIndexLoading
 }
 
 /** 丢弃词典索引缓存（导入/清空数据后调用） */
@@ -108,7 +107,7 @@ export async function searchDict(prefixOrKeyword, limit = DICT_DEFAULT_LIMIT) {
   const size = Number.isFinite(limit) && limit > 0 ? Math.floor(limit) : DICT_DEFAULT_LIMIT
   if (!query) return []
 
-  const { entries } = await loadDictIndex()
+  const entries = await loadDictIndex()
   const matched = []
   for (const entry of entries) {
     const score = scoreEntry(entry, query)

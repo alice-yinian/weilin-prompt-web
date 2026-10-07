@@ -1,10 +1,7 @@
 <template>
   <div class="translate-page">
     <h1 class="page-title">{{ t('translate.title') }}</h1>
-
-    <div class="card body-card">
-      <TranslatePanel />
-    </div>
+    <TranslatePanel />
   </div>
 </template>
 
@@ -17,17 +14,6 @@
 
 <style scoped>
   .translate-page {
-    display: flex;
-    flex-direction: column;
-    height: 100%;
-    min-height: 0;
-  }
-
-  .body-card {
-    flex: 1;
-    min-height: 0;
-    display: flex;
-    flex-direction: column;
-    margin-bottom: 0;
+    max-width: 960px;
   }
 </style>

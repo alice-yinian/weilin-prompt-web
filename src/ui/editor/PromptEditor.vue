@@ -40,6 +40,24 @@
       <button class="ghost danger" @click="editor.clearAll()">{{ t('editor.clearAll') }}</button>
     </div>
 
+    <div class="chip-area scroll" @dragover.prevent @drop="onDropToEnd">
+      <TagChip
+        v-for="token in editor.visibleTokens"
+        :key="token.id"
+        :token="token"
+        :selected="editor.selection.includes(token.id)"
+        :dragging="draggingId === token.id"
+        @pick="onPick(token, $event)"
+        @toggle-hidden="editor.toggleHidden(token.id)"
+        @drag-start="onDragStart(token, $event)"
+        @drop="onDrop(token, $event)"
+        @drag-end="draggingId = null"
+      />
+      <span v-if="!editor.visibleTokens.length" class="faint empty-hint">
+        {{ t('editor.dragHint') }}
+      </span>
+    </div>
+
     <div v-if="editor.selection.length" class="selection-bar row wrap">
       <span class="faint">{{ t('editor.selectedCount', { n: editor.selection.length }) }}</span>
 
@@ -67,24 +85,6 @@
       <button class="ghost danger" @click="editor.removeTokens(editor.selection)">{{ t('editor.batchDelete') }}</button>
       <div class="spacer"></div>
       <button class="ghost" @click="editor.clearSelection()">{{ t('editor.clearSelection') }}</button>
-    </div>
-
-    <div class="chip-area scroll" @dragover.prevent @drop="onDropToEnd">
-      <TagChip
-        v-for="token in editor.visibleTokens"
-        :key="token.id"
-        :token="token"
-        :selected="editor.selection.includes(token.id)"
-        :dragging="draggingId === token.id"
-        @pick="onPick(token, $event)"
-        @toggle-hidden="editor.toggleHidden(token.id)"
-        @drag-start="onDragStart(token, $event)"
-        @drop="onDrop(token, $event)"
-        @drag-end="draggingId = null"
-      />
-      <span v-if="!editor.visibleTokens.length" class="faint empty-hint">
-        {{ t('editor.dragHint') }}
-      </span>
     </div>
 
     <div class="hidden-zone">

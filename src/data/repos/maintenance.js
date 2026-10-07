@@ -1,21 +1,17 @@
-import { openDB, STORES } from '../db'
+import { ALL_STORES, withTx } from '../db.js'
 
-// 清空本地库（词库/历史/收藏/片段/词典/图片），保留浏览器设置
+/**
+ * 清空全部仓库（设置/数据页的"清空全部数据"用），返回各仓库删除条数。
+ * 只清数据，不重建内存索引：调用方需要自行 invalidateTagIndex()。
+ */
 export async function clearAllData() {
-  const db = await openDB()
-  const storeNames = [
-    STORES.groups,
-    STORES.subgroups,
-    STORES.tags,
-    STORES.history,
-    STORES.favorites,
-    STORES.labels,
-    STORES.dict,
-    STORES.blobs
-  ].filter(Boolean)
-
-  const tx = db.transaction(storeNames, 'readwrite')
-  await Promise.all(storeNames.map((name) => tx.objectStore(name).clear()))
-  await tx.done
-  return true
+  return withTx([...ALL_STORES], 'readwrite', async (tx) => {
+    const counts = {}
+    for (const name of ALL_STORES) {
+      const store = tx.objectStore(name)
+      counts[name] = await store.count()
+      await store.clear()
+    }
+    return counts
+  })
 }

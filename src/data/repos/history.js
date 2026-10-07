@@ -1,4 +1,4 @@
-import { STORES, withTx, ALL_STORES } from '../db.js'
+import { STORES, withTx } from '../db.js'
 import { toArray, sortByCreateTime, nextCreateTime } from '../util.js'
 
 /**
@@ -58,22 +58,5 @@ export async function clearHistory() {
     const count = await tx.store.count()
     await tx.store.clear()
     return { history: count }
-  })
-}
-
-/**
- * 清空所有仓库（设置页"清空全部数据"用），返回各仓库删除条数。
- * 注意：只清数据，不重建内存索引；调用方需要自行 invalidateTagIndex()。
- */
-export async function clearAll() {
-  // 单事务里只做 IDB 操作：先计数再 clear
-  return withTx([...ALL_STORES], 'readwrite', async (tx) => {
-    const counts = {}
-    for (const name of ALL_STORES) {
-      const store = tx.objectStore(name)
-      counts[name] = await store.count()
-      await store.clear()
-    }
-    return counts
   })
 }

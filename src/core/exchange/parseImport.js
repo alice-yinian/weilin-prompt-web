@@ -61,13 +61,47 @@ function buildRecord(columns, values) {
   return record
 }
 
+// 按 ';' 切分语句，但忽略单引号字符串内的分号（如标签 ";p"）。
+// 上游是直接 split(';')，遇到含分号的标签会丢数据，这里做兼容性增强。
+function splitStatements(text) {
+  const statements = []
+  let current = ''
+  let inString = false
+  for (let i = 0; i < text.length; i++) {
+    const ch = text[i]
+    if (inString) {
+      current += ch
+      if (ch === "'") {
+        if (text[i + 1] === "'") {
+          current += "'"
+          i++
+        } else {
+          inString = false
+        }
+      }
+      continue
+    }
+    if (ch === "'") {
+      inString = true
+      current += ch
+      continue
+    }
+    if (ch === ';') {
+      if (current.trim()) statements.push(current)
+      current = ''
+      continue
+    }
+    current += ch
+  }
+  if (current.trim()) statements.push(current)
+  return statements
+}
+
 // 逐条识别：含 tag_tags → tag；否则含 (tag_groups|tag_subgroups) 且有 p_uuid，
 // 再靠是否含 g_uuid 区分一级/二级（与上游 import_tag.vue:311-360 一致）
 export function parseSQL(text) {
   const result = { groups: [], subgroups: [], tags: [], skipped: 0 }
-  const statements = String(text ?? '')
-    .split(';')
-    .filter((s) => s.trim())
+  const statements = splitStatements(String(text ?? ''))
   for (const statement of statements) {
     if (statement.includes('tag_tags')) {
       const record = buildRecord(TAG_TAG_COLUMNS, parseValues(statement))

@@ -69,7 +69,7 @@ describe('repos/dict', () => {
 
     expect((await searchDict('1girl')).map((entry) => entry.tag)).toEqual(['1girl', '1girls'])
     expect((await searchDict('cat')).map((entry) => entry.tag)).toEqual(['cat', 'black_cat'])
-    expect((await searchDict('猫')).map((entry) => entry.tag)).toEqual(['black_cat', 'cat'])
+    expect((await searchDict('猫')).map((entry) => entry.tag)).toEqual(['cat', 'black_cat'])
     expect((await searchDict('CAT')).map((entry) => entry.tag)).toEqual(['cat', 'black_cat'])
     expect(await searchDict('')).toEqual([])
     expect(await searchDict('   ')).toEqual([])
