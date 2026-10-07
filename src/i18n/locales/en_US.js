@@ -306,6 +306,7 @@ export default {
     batchImages: 'Import preview images',
     batchImagesHint: 'Pick multiple images; each file name must match a tag text (1girl.png) or a <t_uuid>',
     batchImagesDone: 'Imported {ok} images, {skipped} unmatched',
+    resizeHint: 'Drag to resize the column (double-click to reset)',
     clearImages: 'Clear all preview images',
     exportImage: 'Export this preview image',
     exported: 'Exported {name}',

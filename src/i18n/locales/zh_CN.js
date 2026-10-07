@@ -305,6 +305,7 @@ export default {
     batchImages: '批量导入预览图',
     batchImagesHint: '可选择多张图片，按文件名匹配标签：1girl.png（标签文本）或 <t_uuid>.png',
     batchImagesDone: '预览图导入：成功 {ok} 张，未匹配 {skipped} 张',
+    resizeHint: '拖动调整列宽（双击复位）',
     clearImages: '清空全部预览图',
     exportImage: '导出这张预览图',
     exported: '已导出 {name}',

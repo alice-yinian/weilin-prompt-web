@@ -50,6 +50,7 @@
   import { useLibraryStore } from '../../stores/library'
   import { useSettingsStore } from '../../stores/settings'
   import { useTranslationStore } from '../../stores/translation'
+  import { useColumnResize } from '../common/useColumnResize'
   import { addHistory } from '../../data/repos/history'
 
   const { t } = useI18n()
@@ -60,7 +61,15 @@
 
   const promptEditorRef = ref(null)
   const activeTab = ref('tags')
-  const resizeDragging = ref(false)
+
+  // 分隔条往左拖变宽（invert）
+  const { dragging: resizeDragging, start: startResize } = useColumnResize({
+    read: () => settings.panelWidth,
+    apply: (width) => settings.setPanelWidth(width),
+    invert: true,
+    min: 260,
+    max: 760
+  })
 
   const tabs = [
     { key: 'tags', label: 'editor.panelTags', component: TagPickerPanel },
@@ -83,40 +92,7 @@
     editor.refreshTranslations()
   })
 
-  // 右侧面板宽度：拖动分隔条调整（双击复位）
-  function startResize(event) {
-    event.preventDefault()
-    resizeDragging.value = true
-    const startX = event.clientX
-    const startWidth = settings.panelWidth
-    const target = event.currentTarget
-
-    const move = (moveEvent) => {
-      const delta = startX - moveEvent.clientX
-      settings.setPanelWidth(startWidth + delta)
-    }
-    const stop = () => {
-      resizeDragging.value = false
-      window.removeEventListener('pointermove', move)
-      window.removeEventListener('pointerup', stop)
-      if (target?.releasePointerCapture) {
-        try {
-          target.releasePointerCapture(event.pointerId)
-        } catch (error) {
-          // 指针已释放时忽略
-        }
-      }
-    }
-
-    try {
-      target.setPointerCapture(event.pointerId)
-    } catch (error) {
-      // 不支持指针捕获时退化为全局监听
-    }
-    window.addEventListener('pointermove', move)
-    window.addEventListener('pointerup', stop)
-  }
-
+  // 双击分隔条复位
   function resetWidth() {
     settings.setPanelWidth(400)
   }

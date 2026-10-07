@@ -22,7 +22,10 @@
       <span class="faint hint">{{ t('tags.importHint') }}</span>
     </div>
 
-    <div class="columns">
+    <div
+      class="columns"
+      :style="{ '--group-col': `${settings.tagGroupWidth}px`, '--subgroup-col': `${settings.tagSubgroupWidth}px` }"
+    >
       <TreeListPanel
         class="col"
         :title="t('tags.groups')"
@@ -37,6 +40,16 @@
         @move="onMoveGroup"
       />
 
+      <div
+        class="splitter"
+        :class="{ dragging: groupColDragging }"
+        :title="t('tags.resizeHint')"
+        @pointerdown="startGroupColResize"
+        @dblclick="settings.setTagColumnWidth('group', 260)"
+      >
+        <span class="splitter-grip"></span>
+      </div>
+
       <TreeListPanel
         class="col"
         :title="t('tags.subgroups')"
@@ -50,6 +63,16 @@
         @remove="removeSubgroup"
         @move="onMoveSubgroup"
       />
+
+      <div
+        class="splitter"
+        :class="{ dragging: subgroupColDragging }"
+        :title="t('tags.resizeHint')"
+        @pointerdown="startSubgroupColResize"
+        @dblclick="settings.setTagColumnWidth('subgroup', 260)"
+      >
+        <span class="splitter-grip"></span>
+      </div>
 
       <TagListPanel
         :visible="visibleTags"
@@ -138,6 +161,7 @@
   import { tagsToYAML } from '../../core/exchange/exportYAML'
   import { useLibraryStore } from '../../stores/library'
   import { useSettingsStore } from '../../stores/settings'
+  import { useColumnResize } from '../common/useColumnResize'
   import { timestampSuffix } from '../../utils/format'
   import { toast } from '../../utils/toast'
   import ImportDialog from '../tags/ImportDialog.vue'
@@ -151,6 +175,22 @@
   const { t } = useI18n()
   const library = useLibraryStore()
   const settings = useSettingsStore()
+
+  // 一级 / 二级分组两栏宽度可拖拽（往右拖变宽）
+  const {
+    dragging: groupColDragging,
+    start: startGroupColResize
+  } = useColumnResize({
+    read: () => settings.tagGroupWidth,
+    apply: (width) => settings.setTagColumnWidth('group', width)
+  })
+  const {
+    dragging: subgroupColDragging,
+    start: startSubgroupColResize
+  } = useColumnResize({
+    read: () => settings.tagSubgroupWidth,
+    apply: (width) => settings.setTagColumnWidth('subgroup', width)
+  })
 
   const fileInput = ref(null)
   const activeGroupUuid = ref('')
@@ -841,17 +881,43 @@
 
   .columns {
     display: flex;
-    gap: 12px;
+    gap: 8px;
     flex: 1;
     min-height: 0;
   }
 
   .col {
     flex: none;
-    width: 240px;
+    min-width: 0;
   }
 
-  .col + .col {
-    width: 220px;
+  .columns > .col:first-child {
+    width: var(--group-col, 260px);
+  }
+
+  .columns > .col:nth-child(3) {
+    width: var(--subgroup-col, 260px);
+  }
+
+  .splitter {
+    width: 8px;
+    flex: none;
+    cursor: col-resize;
+    display: grid;
+    place-items: center;
+    touch-action: none;
+  }
+
+  .splitter-grip {
+    width: 3px;
+    height: 46px;
+    border-radius: 2px;
+    background: var(--border);
+    transition: background 0.15s;
+  }
+
+  .splitter:hover .splitter-grip,
+  .splitter.dragging .splitter-grip {
+    background: var(--accent);
   }
 </style>

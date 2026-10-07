@@ -30,6 +30,9 @@ export const useSettingsStore = defineStore('settings', () => {
   const randomGroups = ref(stored.randomGroups || [])
   // 编辑器右侧面板宽度（拖拽分隔条调整）
   const panelWidth = ref(stored.panelWidth ?? 400)
+  // 词库页一级 / 二级分组两栏宽度
+  const tagGroupWidth = ref(stored.tagGroupWidth ?? 260)
+  const tagSubgroupWidth = ref(stored.tagSubgroupWidth ?? 260)
   // API 翻译配置（密钥只存在本机浏览器）
   const apiTranslation = ref(normalizeConfig(stored.apiTranslation || DEFAULT_API_TRANSLATION_CONFIG))
   // 标签预览图上传选项
@@ -49,6 +52,8 @@ export const useSettingsStore = defineStore('settings', () => {
         defaultColor: defaultColor.value,
         randomGroups: randomGroups.value,
         panelWidth: panelWidth.value,
+        tagGroupWidth: tagGroupWidth.value,
+        tagSubgroupWidth: tagSubgroupWidth.value,
         apiTranslation: apiTranslation.value,
         imageCompress: imageCompress.value,
         imageMaxSize: imageMaxSize.value,
@@ -116,6 +121,16 @@ export const useSettingsStore = defineStore('settings', () => {
     persist()
   }
 
+  /** 词库页列宽（key: 'group' | 'subgroup'） */
+  function setTagColumnWidth(key, value) {
+    const num = Number(value)
+    if (!Number.isFinite(num)) return
+    const width = Math.min(720, Math.max(160, Math.round(num)))
+    if (key === 'group') tagGroupWidth.value = width
+    else if (key === 'subgroup') tagSubgroupWidth.value = width
+    persist()
+  }
+
   function setImageMaxSize(value) {
     const num = Number(value)
     if (!Number.isFinite(num)) return
@@ -144,6 +159,8 @@ export const useSettingsStore = defineStore('settings', () => {
     defaultColor.value = DEFAULT_TAG_COLOR
     randomGroups.value = []
     panelWidth.value = 400
+    tagGroupWidth.value = 260
+    tagSubgroupWidth.value = 260
     apiTranslation.value = normalizeConfig(DEFAULT_API_TRANSLATION_CONFIG)
     imageCompress.value = true
     imageMaxSize.value = 512
@@ -162,6 +179,8 @@ export const useSettingsStore = defineStore('settings', () => {
     defaultColor,
     randomGroups,
     panelWidth,
+    tagGroupWidth,
+    tagSubgroupWidth,
     apiTranslation,
     imageCompress,
     imageMaxSize,
@@ -175,6 +194,7 @@ export const useSettingsStore = defineStore('settings', () => {
     setDefaultColor,
     setFlag,
     setPanelWidth,
+    setTagColumnWidth,
     setImageMaxSize,
     setImageQuality,
     updateApiTranslation,

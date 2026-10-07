@@ -96,6 +96,8 @@
     padding: 6px 8px;
     border-radius: var(--radius-sm);
     cursor: pointer;
+    /* 名称过长时换行而不是撑破列宽 */
+    align-items: flex-start;
   }
 
   .item:hover {
@@ -110,6 +112,7 @@
     width: 10px;
     height: 10px;
     flex: none;
+    margin-top: 4px;
     border-radius: 2px;
     border: 1px solid var(--border-strong);
   }
@@ -121,18 +124,22 @@
 
   .name {
     font-size: 13px;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
+    white-space: normal;
+    overflow-wrap: anywhere;
+    word-break: break-word;
+    line-height: 1.35;
   }
 
   .meta {
     font-size: 11px;
+    white-space: normal;
+    overflow-wrap: anywhere;
   }
 
   .ops {
     flex: none;
     gap: 0;
+    white-space: nowrap;
   }
 
   .ops button {
