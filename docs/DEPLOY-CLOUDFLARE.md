@@ -10,23 +10,63 @@
 
 ---
 
-## 路径 A：Git 集成（推荐，推代码自动部署）
+## 路径 A：网页端从 GitHub 仓库导入（最常用）
 
-1. 把仓库推到 GitHub / GitLab；
-2. Cloudflare Dashboard → **Workers & Pages → Create → Pages → Connect to Git**，选中仓库；
-3. 构建配置填：
+> 前提：代码已经推到 GitHub（本仓库远端为 `alice-yinian/weilin-prompt-web`，`main` 分支）。
 
-   | 项 | 值 |
-   |---|---|
-   | Framework preset | `Vue`（或 `None`，都一样） |
-   | Build command | `npm ci && npm run build` |
-   | Build output directory | `dist` |
-   | Node version（环境变量） | `NODE_VERSION=22`（Vite 6 需要 Node 18+；不设也能跑，Cloudflare 默认已较新） |
+### 步骤
 
-4. Save and Deploy。之后每次 push 到生产分支会自动构建；其他分支/PR 会生成预览域名。
+1. 打开 **https://dash.cloudflare.com** → 左侧选 **Workers & Pages**（新版叫 **Compute (Workers)** → Workers & Pages）
+2. 点 **Create application** → 切到 **Pages** 标签 → **Connect to Git**
+3. **授权 GitHub**：首次会跳转安装 *Cloudflare Pages* GitHub App
+   - 选 **Only select repositories** → 勾选 `weilin-prompt-web`（私有仓库必须勾，否则 Pages 读不到代码）
+   - 授权后回到 Cloudflare，列表里选中该仓库 → **Begin setup**
+4. **Set up builds and deployments**（按下面这张表逐项填）：
 
-> 仓库里已带 `public/_headers`：`/assets/*` 长期缓存、`/` 与 `/index.html` 每次校验，
-> 避免发版后访问者仍加载旧 bundle。
+   | 字段（界面原文） | 填什么 | 说明 |
+   |---|---|---|
+   | Project name | `weilin-prompt-web` | 决定默认域名 `https://weilin-prompt-web.pages.dev`；被占用会自动加后缀 |
+   | Production branch | `main` | 推送到这个分支 = 生产部署 |
+   | Framework preset | `Vue`（或 `None`） | 不影响结果，我们用自己的构建命令 |
+   | Build command | `npm ci && npm run build` | 用 `npm ci` 保证锁文件版本一致 |
+   | Build output directory | `dist` | **必须填 `dist`**，填错会白屏 |
+   | Root directory | 留空（仓库根目录） | 本仓库代码就在根目录，不要填 `src` |
+   | Environment variables | `NODE_VERSION` = `22` | Vite 6 需要 Node 18+；显式指定避免平台默认值变化 |
+5. 点 **Save and deploy**。第一次构建约 30–60 秒，完成后给一个 `*.pages.dev` 域名。
+
+### 之后怎么发版
+
+- 往 `main` 推提交 → 自动生产部署（`https://weilin-prompt-web.pages.dev`）
+- 往其他分支推 / 开 PR → 自动生成 **Preview 部署**（独立临时域名，用来验收）
+  - 你仓库里若出现 Dependabot 分支（`dependabot/npm_and_yarn/...`），它会各自生成一套预览部署，无害；不需要就在 GitHub 上关掉/dependabot 分支删掉
+- 回滚：Pages → 项目 → **Deployments** → 选历史上任意一次部署 → **Rollback**
+
+### 这个项目在 Pages 上不需要做的事
+
+| 常见配置 | 本项目 |
+|---|---|
+| SPA 回退规则 `_redirects`（`/* /index.html 200`） | **不需要**：用的是 hash 路由（`/#/editor`），刷新不会 404 |
+| Functions / D1 / KV / R2 绑定 | **不需要**：纯静态，数据全在访问者浏览器 IndexedDB |
+| 环境变量里的密钥 | **不需要**：翻译 API Key 由访问者在「设置」页自己填，存在他的浏览器里 |
+| 构建产物里的 `_headers` | **已内置**（`public/_headers`），构建时自动复制到 `dist/`，平台自动读取 |
+
+### 自定义域名
+
+Pages 项目 → **Custom domains** → Add a custom domain。
+- 域名已托管在 Cloudflare：一键绑定，自动签发证书；
+- 域名在别处：按提示到域名商加 `CNAME` 指向 `weilin-prompt-web.pages.dev`。
+- 想挂在子路径（如 `example.com/tools/`）：本项目 `base: './'` 用相对路径，直接反代到该路径即可，无需改配置。
+
+### 构建失败的常见原因
+
+| 报错 | 处理 |
+|---|---|
+| `npm ci` 报 lock 与 package.json 不一致 | 本地跑一次 `npm install` 后提交更新过的 `package-lock.json` |
+| `Cannot find module 'vite'` / Node 版本错误 | 设 `NODE_VERSION=22` |
+| 部署成功但页面白屏、控制台 404 | Build output directory 不是 `dist`，或 Root directory 填错了 |
+| GitHub 仓库列表里找不到自己的仓库 | 到 GitHub → Settings → Applications → Cloudflare Pages 里把该仓库加进授权范围 |
+
+---
 
 ## 路径 B：CLI 直传（不想接 CI 时最快）
 
