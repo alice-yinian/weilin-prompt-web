@@ -1,0 +1,21 @@
+# Cloudflare Pages 响应头（构建时由 Vite 从 public/ 复制到 dist/ 根目录）
+# 文档：https://developers.cloudflare.com/pages/configuration/headers/
+
+/*
+  X-Content-Type-Options: nosniff
+  Referrer-Policy: strict-origin-when-cross-origin
+  X-Frame-Options: SAMEORIGIN
+
+# 带内容哈希的静态资源可以长期缓存
+/assets/*
+  Cache-Control: public, max-age=31536000, immutable
+
+# 入口 HTML 必须每次校验，否则发版后用户仍加载旧 bundle
+/
+  Cache-Control: public, max-age=0, must-revalidate
+/index.html
+  Cache-Control: public, max-age=0, must-revalidate
+
+# 单文件构建产物（若把 dist-single 也部署上去）
+/single/*
+  Cache-Control: public, max-age=0, must-revalidate

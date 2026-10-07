@@ -11,7 +11,9 @@
     "build:single": "vite build --config vite.config.single.js",
     "preview": "vite preview",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "deploy:cf": "wrangler pages deploy dist --project-name=weilin-prompt-web",
+    "preview:cf": "wrangler pages dev dist"
   },
   "dependencies": {
     "idb": "^8.0.0",

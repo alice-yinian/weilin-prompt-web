@@ -11,3 +11,8 @@ __pycache__/
 # 本地测试产物
 /tmp-data/
 *.bundle.json
+
+# Cloudflare wrangler 本地缓存（miniflare 状态、临时 bundle）
+.wrangler/
+.dev.vars
+.mf/
