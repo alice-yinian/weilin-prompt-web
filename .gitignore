@@ -1,0 +1,13 @@
+node_modules
+dist
+dist-single
+*.local
+.DS_Store
+.vite
+
+__pycache__/
+*.pyc
+
+# 本地测试产物
+/tmp-data/
+*.bundle.json

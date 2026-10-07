@@ -1,0 +1,40 @@
+/* 主题变量：默认深色，[data-theme='light'] 覆盖为浅色 */
+:root {
+  --bg: #16181d;
+  --bg-elev: #1e2127;
+  --bg-elev-2: #262a32;
+  --bg-input: #12141a;
+  --border: #32373f;
+  --border-strong: #454b55;
+  --text: #e6e8ec;
+  --text-dim: #a3a9b3;
+  --text-faint: #6f7681;
+  --accent: #ff7b02;
+  --accent-soft: rgba(255, 123, 2, 0.16);
+  --accent-text: #1a1207;
+  --danger: #e5484d;
+  --danger-soft: rgba(229, 72, 77, 0.16);
+  --ok: #46a758;
+  --shadow: 0 6px 24px rgba(0, 0, 0, 0.35);
+  --radius: 8px;
+  --radius-sm: 5px;
+}
+
+:root[data-theme='light'] {
+  --bg: #f5f6f8;
+  --bg-elev: #ffffff;
+  --bg-elev-2: #eceef2;
+  --bg-input: #ffffff;
+  --border: #dfe2e8;
+  --border-strong: #c3c8d2;
+  --text: #1c1f24;
+  --text-dim: #5a6169;
+  --text-faint: #8b929c;
+  --accent: #e76f00;
+  --accent-soft: rgba(231, 111, 0, 0.12);
+  --accent-text: #ffffff;
+  --danger: #d32f2f;
+  --danger-soft: rgba(211, 47, 47, 0.1);
+  --ok: #2e7d32;
+  --shadow: 0 6px 20px rgba(20, 24, 32, 0.12);
+}

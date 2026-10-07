@@ -1,0 +1,33 @@
+{
+  "name": "weilin-prompt-web",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "license": "GPL-2.0-only",
+  "description": "WeiLin-Comfyui-Tools 的纯静态网页版提示词助手（无后端，数据存储在浏览器 IndexedDB）",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "build:single": "vite build --config vite.config.single.js",
+    "preview": "vite preview",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "dependencies": {
+    "idb": "^8.0.0",
+    "js-yaml": "^4.1.0",
+    "pinia": "^3.0.1",
+    "uuidv7": "^1.0.2",
+    "vue": "^3.5.13",
+    "vue-i18n": "^11.1.2",
+    "vue-router": "^4.5.0"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-vue": "^5.2.1",
+    "fake-indexeddb": "^6.0.0",
+    "jsdom": "^26.0.0",
+    "vite": "^6.0.9",
+    "vite-plugin-singlefile": "^2.1.0",
+    "vitest": "^3.0.5"
+  }
+}
