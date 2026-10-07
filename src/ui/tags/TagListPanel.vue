@@ -97,6 +97,11 @@
             <div class="text mono">{{ tag.text }}</div>
             <div v-if="tag.desc" class="desc faint">{{ tag.desc }}</div>
           </div>
+          <div v-if="imageUrls[tag.t_uuid]" class="img-ops">
+            <button class="ghost" :title="t('tags.exportImage')" @click.stop="$emit('export-image', tag)">
+              ⤓
+            </button>
+          </div>
           <div class="ops row">
             <button
               class="ghost"
@@ -183,6 +188,7 @@
     'delete-selected',
     'upload-image',
     'remove-image',
+    'export-image',
     'batch-images'
   ])
 
@@ -473,6 +479,18 @@
 
   .ops {
     flex: none;
+  }
+
+  /* 与行内的排序/编辑操作分开一组，避免误点 */
+  .img-ops {
+    flex: none;
+    padding-left: 6px;
+    border-left: 1px solid var(--border);
+  }
+
+  .img-ops button {
+    padding: 2px 5px;
+    line-height: 1.4;
   }
 
   .ops button {

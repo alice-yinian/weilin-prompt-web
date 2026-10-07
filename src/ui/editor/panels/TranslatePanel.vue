@@ -8,24 +8,6 @@
     <div v-else class="body scroll">
       <section class="block">
         <div class="row wrap">
-          <span class="faint">{{ t('translate.direction') }}</span>
-          <button
-            :class="direction === DIR_EN2ZH ? 'primary' : 'ghost'"
-            @click="setDirection(DIR_EN2ZH)"
-          >
-            {{ t('settings.dirEn2Zh') }}
-          </button>
-          <button
-            :class="direction === DIR_ZH2EN ? 'primary' : 'ghost'"
-            @click="setDirection(DIR_ZH2EN)"
-          >
-            {{ t('settings.dirZh2En') }}
-          </button>
-        </div>
-      </section>
-
-      <section class="block">
-        <div class="row wrap">
           <button class="primary" :disabled="busyAll" @click="translateAll">
             {{ t('translate.translateAll') }}
           </button>
@@ -75,6 +57,17 @@
           </button>
         </div>
 
+        <div class="row wrap">
+          <span class="faint">{{ t('translate.mode') }}</span>
+          <label class="row check">
+            <input type="radio" value="missing" :checked="groupMode === 'missing'" @change="groupMode = 'missing'" />
+            <span>{{ t('translate.modeMissing') }}</span>
+          </label>
+          <label class="row check">
+            <input type="radio" value="force" :checked="groupMode === 'force'" @change="groupMode = 'force'" />
+            <span>{{ t('translate.modeForce') }}</span>
+          </label>
+        </div>
         <p class="faint hint">{{ t('translate.batchGroupHint') }}</p>
         <p v-if="groupBusy && groupProgress" class="faint hint">
           {{ t('translate.progress', groupProgress) }}
@@ -177,7 +170,6 @@
   import { useRouter } from 'vue-router'
   import { useEditorStore } from '../../../stores/editor'
   import { useLibraryStore } from '../../../stores/library'
-  import { useSettingsStore } from '../../../stores/settings'
   import { useTranslationStore } from '../../../stores/translation'
   import { extractText } from '../../../core/search/offlineTranslate'
   import { copyWithToast } from '../../../utils/clipboard'
@@ -187,7 +179,6 @@
   const router = useRouter()
   const editor = useEditorStore()
   const library = useLibraryStore()
-  const settings = useSettingsStore()
   const cache = useTranslationStore()
 
   const segments = ref([])
@@ -201,12 +192,10 @@
   const picked = ref({})
   const groupBusy = ref(false)
   const groupProgress = ref(null)
+  const groupMode = ref('missing')
 
-  // 与 core/translate、设置页共用的方向值
+  // 除编辑器里的「中译英」输入框外，本面板一律英译中
   const DIR_EN2ZH = 'en2zh'
-  const DIR_ZH2EN = 'zh2en'
-
-  const direction = computed(() => settings.apiTranslation?.direction || DIR_EN2ZH)
 
   const pickedCount = computed(() => Object.values(picked.value).filter(Boolean).length)
 
@@ -298,11 +287,6 @@
     return editor.isTranslationConfigured()
   }
 
-  function setDirection(value) {
-    if (direction.value === value) return
-    settings.updateApiTranslation({ direction: value })
-  }
-
   function toggleGroup(pUuid) {
     collapsed.value = collapsed.value.includes(pUuid)
       ? collapsed.value.filter((id) => id !== pUuid)
@@ -363,14 +347,16 @@
     groupBusy.value = true
     groupProgress.value = { done: 0, total: texts.length }
     try {
-      // translateTexts 内部跳过词库/缓存已有的词，只对缺失词发请求
+      // 只补缺失：translateTexts 内部跳过词库/缓存已有的词；全量重译：force 忽略缓存重新请求
+      const force = groupMode.value === 'force'
       const results = await editor.translateTexts(texts, {
+        force,
         onProgress: (info) => {
           groupProgress.value = { done: info.done, total: info.total }
         }
       })
-      // source=api 才代表真的发过请求；全部命中词库/缓存说明没有缺失词
-      if (!results.some((item) => item.source === 'api')) {
+      // 只补缺失模式下，source=api 才代表真的发过请求；全部命中词库/缓存说明没有缺失词
+      if (!force && !results.some((item) => item.source === 'api')) {
         toast.info(t('translate.noMissing'))
       } else {
         const ok = results.filter((item) => item.translated).length
@@ -424,7 +410,7 @@
     busyAll.value = true
     try {
       const next = []
-      for (const part of parts) next.push(await lookup(part, direction.value))
+      for (const part of parts) next.push(await lookup(part, DIR_EN2ZH))
       segments.value = next
     } finally {
       busyAll.value = false

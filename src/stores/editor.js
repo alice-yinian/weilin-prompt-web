@@ -287,23 +287,23 @@ export const useEditorStore = defineStore('editor', () => {
     return libraryRef
   }
 
-  function translationDirection() {
-    return useSettingsStore().apiTranslation?.direction === 'zh2en' ? 'zh2en' : 'en2zh'
-  }
-
-  function resolveTranslation(text) {
-    // 中→英：先用「中文释义 → 英文标签」反查表
-    if (translationDirection() === 'zh2en') {
+  /**
+   * 解析译文：词库/反查表优先，其次本地缓存。
+   * direction='zh2en' 时走「中文释义 → 英文标签」反查表（只用于编辑器里的中译英输入框）。
+   */
+  function resolveTranslation(text, direction = 'en2zh') {
+    if (direction === 'zh2en') {
       const reverse = library().reverseDescOf(text)
       if (reverse?.text) {
         return { translated: reverse.text, source: 'library', color: reverse.color }
       }
+    } else {
+      const fromLibrary = library().descOf(text)
+      if (fromLibrary?.desc) {
+        return { translated: fromLibrary.desc, source: 'library', color: fromLibrary.color }
+      }
     }
-    const fromLibrary = library().descOf(text)
-    if (fromLibrary?.desc) {
-      return { translated: fromLibrary.desc, source: 'library', color: fromLibrary.color }
-    }
-    const cached = translationStore().cachedOf(text)
+    const cached = translationStore().cachedOf(text, direction)
     if (cached?.translated) {
       return { translated: cached.translated, source: cached.source || 'cache' }
     }
@@ -349,11 +349,11 @@ export const useEditorStore = defineStore('editor', () => {
     return { translated: token.translate, source: token.translateSource || 'cache' }
   }
 
-  async function lookupTranslation(text) {
-    const hit = resolveTranslation(text)
+  async function lookupTranslation(text, direction = 'en2zh') {
+    const hit = resolveTranslation(text, direction)
     if (hit) return { translated: hit.translated, source: hit.source }
-    await translationStore().ensureCached([text])
-    const cached = translationStore().cachedOf(text)
+    await translationStore().ensureCached([text], direction)
+    const cached = translationStore().cachedOf(text, direction)
     return cached ? { translated: cached.translated, source: cached.source || 'cache' } : null
   }
 
@@ -376,7 +376,7 @@ export const useEditorStore = defineStore('editor', () => {
    * @param {string[]} texts
    * @param {{force?: boolean, onProgress?: Function}} options force=true 时忽略词库/缓存重新请求
    */
-  async function translateTexts(texts, { force = false, onProgress } = {}) {
+  async function translateTexts(texts, { force = false, direction = 'en2zh', onProgress } = {}) {
     const settings = useSettingsStore()
     const list = Array.from(new Set((texts || []).map((text) => String(text ?? '').trim()).filter(Boolean)))
     const results = []
@@ -384,7 +384,7 @@ export const useEditorStore = defineStore('editor', () => {
 
     for (const text of list) {
       if (!force) {
-        const hit = resolveTranslation(text)
+        const hit = resolveTranslation(text, direction)
         if (hit) {
           results.push({ text, translated: hit.translated, source: hit.source, error: null })
           continue
@@ -403,8 +403,8 @@ export const useEditorStore = defineStore('editor', () => {
       return results
     }
 
-    await translationStore().ensureCached(pending)
-    const { translations, errors } = await apiTranslateTexts(pending, config, { onProgress })
+    await translationStore().ensureCached(pending, direction)
+    const { translations, errors } = await apiTranslateTexts(pending, { ...config, direction }, { onProgress })
     const entries = []
     pending.forEach((text, index) => {
       const translated = String(translations?.[index] ?? '').trim()
@@ -416,9 +416,26 @@ export const useEditorStore = defineStore('editor', () => {
         error: translated ? null : errors?.[0] || 'empty'
       })
     })
-    if (entries.length) await translationStore().saveMany(entries, 'api')
+    if (entries.length) await translationStore().saveMany(entries, 'api', direction)
     refreshTranslations()
     return results
+  }
+
+  /**
+   * 编辑器里的「中译英」入口：按逗号/顿号/换行切分中文，翻译后用英文标签插入提示词。
+   * 优先走词库反查表（零请求），缺失的再交给 API（direction='zh2en'）。
+   */
+  async function insertChineseAsTags(input, { force = false, onProgress } = {}) {
+    const parts = String(input ?? '')
+      .split(/[,，、;；\n]+/)
+      .map((part) => part.trim())
+      .filter(Boolean)
+    if (!parts.length) return { parts: [], rows: [], inserted: [] }
+
+    const rows = await translateTexts(parts, { direction: 'zh2en', force, onProgress })
+    const inserted = rows.map((row) => String(row.translated || '').trim()).filter(Boolean)
+    if (inserted.length) insertManyTags(inserted)
+    return { parts, rows, inserted }
   }
 
   async function translateSelectedTokens(ids, options = {}) {
@@ -507,6 +524,7 @@ export const useEditorStore = defineStore('editor', () => {
     lookupTranslation,
     missingTranslations,
     translateTexts,
+    insertChineseAsTags,
     isTranslationConfigured,
     translateSelectedTokens,
     saveManualTranslation,

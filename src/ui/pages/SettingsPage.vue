@@ -101,24 +101,6 @@
         </select>
       </div>
 
-      <div class="field">
-        <label>{{ t('settings.defaultDirection') }}</label>
-        <div class="row">
-          <button
-            :class="{ primary: settings.apiTranslation.direction === 'en2zh' }"
-            @click="settings.updateApiTranslation({ direction: 'en2zh' })"
-          >
-            {{ t('settings.dirEn2Zh') }}
-          </button>
-          <button
-            :class="{ primary: settings.apiTranslation.direction === 'zh2en' }"
-            @click="settings.updateApiTranslation({ direction: 'zh2en' })"
-          >
-            {{ t('settings.dirZh2En') }}
-          </button>
-        </div>
-      </div>
-
       <template v-if="needsBing">
         <div class="field">
           <label>{{ t('settings.bingKey') }}</label>

@@ -57,6 +57,8 @@
       <button class="ghost danger" @click="editor.clearAll()">{{ t('editor.clearAll') }}</button>
     </div>
 
+    <ZhToEnBox />
+
     <div class="chip-area scroll" @dragover.prevent @drop="onDropToEnd">
       <TagChip
         v-for="token in renderTokens"
@@ -133,6 +135,7 @@
   import TagChip from './TagChip.vue'
   import AutocompleteList from './AutocompleteList.vue'
   import FavoriteDialog from './FavoriteDialog.vue'
+  import ZhToEnBox from './ZhToEnBox.vue'
   import TranslationDialog from './TranslationDialog.vue'
   import { useEditorStore } from '../../stores/editor'
   import { useLibraryStore } from '../../stores/library'

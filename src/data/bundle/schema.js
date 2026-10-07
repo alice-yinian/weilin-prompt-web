@@ -1,6 +1,6 @@
 import { STORES, DEFAULT_COLOR } from '../db.js'
 import { normalizeLabelItem } from '../repos/labels.js'
-import { TRANSLATION_SOURCES, translationKey } from '../repos/translations.js'
+import { TRANSLATION_SOURCES, normalizeDirection, translationKey } from '../repos/translations.js'
 
 /**
  * bundle 数据包的格式约定（开发计划 §5.4）。
@@ -74,7 +74,7 @@ export const ENTITY_SPECS = [
   {
     store: STORES.TRANSLATIONS,
     key: 'textLower',
-    fields: ['textLower', 'text', 'translated', 'source', 'updatedAt']
+    fields: ['textLower', 'text', 'translated', 'source', 'direction', 'updatedAt']
   },
   {
     store: STORES.LABELS,
@@ -157,16 +157,18 @@ export function normalizeLabel(raw = {}, index = 0) {
 }
 
 /**
- * 译文缓存条目。textLower 一律由 text 重新推导，保证与仓库主键口径一致
+ * 译文缓存条目。textLower 一律由 text + direction 重新推导，保证与仓库主键口径一致
  * （包内若只带 textLower 不带 text，则退回使用包内 textLower）。
  */
 export function normalizeTranslation(raw = {}) {
   const rawText = text(raw.text)
+  const direction = normalizeDirection(raw.direction)
   return {
-    textLower: translationKey(rawText) || text(raw.textLower),
+    textLower: translationKey(rawText, direction) || text(raw.textLower),
     text: rawText,
     translated: text(raw.translated),
     source: TRANSLATION_SOURCES.includes(raw.source) ? raw.source : 'manual',
+    direction,
     updatedAt: num(raw.updatedAt, 0)
   }
 }

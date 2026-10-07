@@ -1,6 +1,7 @@
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
 import {
+  translationKey,
   getTranslation,
   getTranslations,
   listTranslations,
@@ -12,10 +13,9 @@ import {
 } from '../data/repos/translations'
 import { timestampSuffix } from '../utils/format'
 
-function keyOf(text) {
-  return String(text ?? '')
-    .trim()
-    .toLowerCase()
+// 缓存键带方向：en2zh 沿用旧纯文本键，zh2en 带方向前缀（由 repos 的 translationKey 统一）
+function keyOf(text, direction = 'en2zh') {
+  return translationKey(text, direction)
 }
 
 function csvCell(value) {
@@ -50,14 +50,14 @@ export const useTranslationStore = defineStore('translation', () => {
   }
 
   // 确保这些文本已从 IndexedDB 载入缓存（批量、幂等）
-  async function ensureCached(texts) {
+  async function ensureCached(texts, direction = 'en2zh') {
     const missing = []
     for (const text of texts || []) {
-      const key = keyOf(text)
+      const key = keyOf(text, direction)
       if (key && !cache.value.has(key)) missing.push(text)
     }
     if (!missing.length) return
-    const found = await getTranslations(missing)
+    const found = await getTranslations(missing, direction)
     if (!found.size) return
     const next = new Map(cache.value)
     for (const record of found.values()) next.set(record.textLower, record)
@@ -65,29 +65,30 @@ export const useTranslationStore = defineStore('translation', () => {
     count.value = next.size
   }
 
-  function cachedOf(text) {
-    const key = keyOf(text)
+  function cachedOf(text, direction = 'en2zh') {
+    const key = keyOf(text, direction)
     return key ? cache.value.get(key) || null : null
   }
 
-  async function save(text, translated, source = 'manual') {
+  async function save(text, translated, source = 'manual', direction = 'en2zh') {
     const value = String(translated ?? '').trim()
-    if (!keyOf(text) || !value) return null
-    const record = await putTranslation(text, value, source)
+    if (!keyOf(text, direction) || !value) return null
+    const record = await putTranslation(text, value, source, direction)
     applyRecords([record])
     count.value = cache.value.size
     return record
   }
 
-  async function saveMany(entries, source = 'api') {
-    const written = await putTranslations(entries, source)
+  async function saveMany(entries, source = 'api', direction = 'en2zh') {
+    const written = await putTranslations(entries, source, direction)
     const rows = (entries || [])
-      .filter((entry) => entry && keyOf(entry.text) && String(entry.translated ?? '').trim())
+      .filter((entry) => entry && keyOf(entry.text, direction) && String(entry.translated ?? '').trim())
       .map((entry) => ({
-        textLower: keyOf(entry.text),
+        textLower: keyOf(entry.text, direction),
         text: String(entry.text).trim(),
         translated: String(entry.translated).trim(),
         source,
+        direction: direction === 'zh2en' ? 'zh2en' : 'en2zh',
         updatedAt: Date.now()
       }))
     applyRecords(rows)
@@ -95,11 +96,11 @@ export const useTranslationStore = defineStore('translation', () => {
     return written
   }
 
-  async function remove(text) {
-    const ok = await deleteTranslation(text)
+  async function remove(text, direction = 'en2zh') {
+    const ok = await deleteTranslation(text, direction)
     if (ok) {
       const next = new Map(cache.value)
-      next.delete(keyOf(text))
+      next.delete(keyOf(text, direction))
       cache.value = next
       count.value = next.size
     }
@@ -117,8 +118,8 @@ export const useTranslationStore = defineStore('translation', () => {
     return listTranslations({ limit })
   }
 
-  async function getOne(text) {
-    return getTranslation(text)
+  async function getOne(text, direction = 'en2zh') {
+    return getTranslation(text, direction)
   }
 
   // 供翻译面板导出：json / csv
@@ -126,10 +127,16 @@ export const useTranslationStore = defineStore('translation', () => {
     const records = await listTranslations()
     const stamp = timestampSuffix()
     if (format === 'csv') {
-      const lines = ['text,translated,source,updatedAt']
+      const lines = ['text,translated,source,direction,updatedAt']
       for (const record of records) {
         lines.push(
-          [csvCell(record.text), csvCell(record.translated), csvCell(record.source), record.updatedAt].join(',')
+          [
+            csvCell(record.text),
+            csvCell(record.translated),
+            csvCell(record.source),
+            csvCell(record.direction || 'en2zh'),
+            record.updatedAt
+          ].join(',')
         )
       }
       return {

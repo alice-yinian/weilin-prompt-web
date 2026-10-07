@@ -71,6 +71,7 @@
         @delete-selected="deleteSelectedTags"
         @upload-image="onUploadImage"
         @remove-image="onRemoveImage"
+        @export-image="exportTagImage"
         @batch-images="onBatchImages"
       />
     </div>
@@ -603,6 +604,19 @@
     }
   }
 
+  // 导出单张预览图：按钮只在有图时渲染，兜底再取一次 blob 避免下拉后图已被替换
+  async function exportTagImage(tag) {
+    try {
+      const blob = await getTagImage(tag.t_uuid)
+      if (!blob) throw new Error(t('common.empty'))
+      const fileName = imageFileName(tag.text, blob)
+      downloadBlob(blob, fileName)
+      toast.success(t('tags.exported', { name: fileName }))
+    } catch (error) {
+      toast.error(t('tags.exportFailed', { msg: error.message || String(error) }))
+    }
+  }
+
   // 批量导入：文件名先精确匹配 t_uuid、再匹配标签文本（忽略大小写，空格/下划线等价）。
   // 串行处理，避免一次把几十张图全解码进内存；进度写进 batchState 由按钮显示。
   async function onBatchImages(files) {
@@ -755,15 +769,35 @@
   }
 
   function safeFileName(name) {
+    return sanitizeFileName(name, 'tags')
+  }
+
+  // 文件名去掉路径/引号类字符与空白，避免不同系统下非法
+  function sanitizeFileName(name, fallback) {
     return (
       String(name ?? '')
         .trim()
-        .replace(/[\\/:*?"<>|\s]+/g, '_') || 'tags'
+        .replace(/[\\/:*?"<>|\s]+/g, '_') || fallback
     )
   }
 
-  function downloadText(text, fileName, type) {
-    const blob = new Blob([text], { type })
+  // 只认常见图片 mime，其余统一 bin，避免把奇怪类型直接写进文件名
+  const IMAGE_EXTENSIONS = {
+    'image/png': 'png',
+    'image/jpeg': 'jpg',
+    'image/webp': 'webp',
+    'image/gif': 'gif'
+  }
+
+  function imageFileName(text, blob) {
+    const mime = String(blob?.type || '')
+      .split(';')[0]
+      .trim()
+      .toLowerCase()
+    return `${sanitizeFileName(text, 'image')}.${IMAGE_EXTENSIONS[mime] || 'bin'}`
+  }
+
+  function downloadBlob(blob, fileName) {
     const url = URL.createObjectURL(blob)
     const link = document.createElement('a')
     link.href = url
@@ -772,6 +806,10 @@
     link.click()
     document.body.removeChild(link)
     URL.revokeObjectURL(url)
+  }
+
+  function downloadText(text, fileName, type) {
+    downloadBlob(new Blob([text], { type }), fileName)
   }
 </script>
 

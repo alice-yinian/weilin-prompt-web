@@ -363,4 +363,60 @@ describe('bundle/translations', () => {
     expect(overwritten.imported.translations).toBe(2)
     expect((await getTranslation('cat')).translated).toBe('包内猫')
   })
+
+  it('两个方向的译文同时导出，round-trip 保留 direction，counts/checksum 正确', async () => {
+    await putTranslation('Cat', '猫', 'manual')
+    await putTranslation('长发', 'long hair', 'api', 'zh2en')
+
+    const bundle = await exportBundle()
+    expect(bundle.counts.translations).toBe(2)
+    expect(bundle.data.translations.map((item) => item.textLower).sort()).toEqual([
+      'cat',
+      'zh2en:长发'
+    ])
+    expect(bundle.data.translations.find((item) => item.textLower === 'zh2en:长发')).toMatchObject({
+      text: '长发',
+      translated: 'long hair',
+      source: 'api',
+      direction: 'zh2en'
+    })
+    if (isChecksumAvailable()) {
+      expect(bundle.checksum.translations).toMatch(/^sha256:[0-9a-f]{64}$/)
+      expect((await verifyBundleChecksum(bundle)).ok).toBe(true)
+    }
+
+    await resetDatabase()
+    const result = await importBundle(bundle, { mode: 'overwrite' })
+    expect(result.imported.translations).toBe(2)
+    expect(result.skipped.translations).toBe(0)
+    expect((await getTranslation('cat')).translated).toBe('猫')
+    expect((await getTranslation('长发', 'zh2en')).translated).toBe('long hair')
+    expect(await getTranslation('长发')).toBeNull()
+
+    const again = await exportBundle()
+    expect(again.counts.translations).toBe(2)
+    expect(again.data.translations.sort((a, b) => a.textLower.localeCompare(b.textLower))).toEqual(
+      bundle.data.translations.sort((a, b) => a.textLower.localeCompare(b.textLower))
+    )
+    if (isChecksumAvailable()) {
+      expect(again.checksum.translations).toBe(bundle.checksum.translations)
+    }
+  })
+
+  it('旧包缺 direction 视为 en2zh，脏 textLower 按 text 重算，非法 direction 退回 en2zh', async () => {
+    const data = {
+      translations: [
+        { text: 'Cat', translated: '猫', source: 'api', updatedAt: 5 },
+        { text: 'Bird', textLower: 'DIRTY-KEY', translated: '鸟', updatedAt: 6 },
+        { text: 'Dog', direction: 'bogus', translated: '狗', updatedAt: 7 }
+      ]
+    }
+
+    const result = await importBundle(makeBundle(data), { mode: 'overwrite' })
+    expect(result.imported.translations).toBe(3)
+    expect((await getTranslation('cat')).direction).toBe('en2zh')
+    expect((await getTranslation('bird')).translated).toBe('鸟')
+    expect(await getTranslation('DIRTY-KEY')).toBeNull()
+    expect((await getTranslation('dog')).direction).toBe('en2zh')
+  })
 })
