@@ -4,7 +4,6 @@
     :class="{
       selected,
       hidden: token.isHidden,
-      lora: token.isLoraTag,
       raw: token.isRaw,
       dragging: dragging
     }"
@@ -36,7 +35,6 @@
 <script setup>
   import { computed } from 'vue'
   import { getWeight } from '../../core/prompt/weight'
-  import { parseLoraTag } from '../../core/prompt/loraTag'
 
   const props = defineProps({
     token: { type: Object, required: true },
@@ -49,12 +47,6 @@
   const tooltip = computed(() => {
     const token = props.token
     if (token.isRaw) return token.isNewline ? '\\n' : '\\t'
-    if (token.isLoraTag) {
-      const parsed = parseLoraTag(token.text)
-      if (parsed) {
-        return `${parsed.name}\nmodel: ${parsed.modelWeight}\ntext: ${parsed.textWeight}\ntrigger: ${parsed.triggerWeight}`
-      }
-    }
     const weight = getWeight(token.text)
     const parts = [token.text]
     if (token.translate) parts.push(token.translate)
@@ -98,11 +90,6 @@
 
   .chip.hidden .desc {
     text-decoration: line-through;
-  }
-
-  .chip.lora {
-    border-color: #7c5cff;
-    background: rgba(124, 92, 255, 0.14);
   }
 
   .chip.raw {

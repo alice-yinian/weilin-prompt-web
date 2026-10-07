@@ -22,5 +22,5 @@ export async function seedGroupChain(createGroup, createSubgroup, names = {}) {
 }
 
 export function tagJson(prompt) {
-  return JSON.stringify({ prompt, lora: '', temp_prompt: [], temp_lora: [] })
+  return JSON.stringify({ prompt, temp_prompt: [] })
 }

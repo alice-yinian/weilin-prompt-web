@@ -98,7 +98,10 @@
 
   const query = ref('')
   const results = ref([])
+  // 一级分组默认折叠，需要时再展开
   const collapsed = ref([])
+  const collapsedInitialized = ref(false)
+  const expandedOnce = ref(new Set())
   const activeSubgroupId = ref('')
   const imageUrls = ref({})
   const previewUrl = ref('')
@@ -110,6 +113,9 @@
 
   onMounted(async () => {
     if (!library.loaded) await library.refresh()
+    // 默认把一级分组全部收起；仍预选第一个二级分组，方便直接点标签
+    collapsed.value = library.groups.map((group) => group.p_uuid)
+    collapsedInitialized.value = true
     const firstGroup = library.groups[0]
     if (firstGroup) {
       const firstSub = (library.subgroupsByGroup[firstGroup.p_uuid] || [])[0]
@@ -140,8 +146,21 @@
     loadImages(tags)
   })
 
+  watch(
+    () => library.groups.map((group) => group.p_uuid).join(','),
+    () => {
+      if (!collapsedInitialized.value) return
+      const known = new Set(collapsed.value)
+      for (const group of library.groups) {
+        if (!known.has(group.p_uuid) && !expandedOnce.value.has(group.p_uuid)) collapsed.value.push(group.p_uuid)
+      }
+    }
+  )
+
   function toggleGroup(pUuid) {
-    collapsed.value = collapsed.value.includes(pUuid)
+    const isCollapsed = collapsed.value.includes(pUuid)
+    if (isCollapsed) expandedOnce.value.add(pUuid)
+    collapsed.value = isCollapsed
       ? collapsed.value.filter((value) => value !== pUuid)
       : collapsed.value.concat(pUuid)
   }

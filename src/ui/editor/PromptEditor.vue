@@ -44,6 +44,15 @@
       <button class="ghost" :disabled="!editor.hiddenTokens.length" @click="editor.clearHidden()">
         {{ t('editor.clearDisabled') }}
       </button>
+      <button
+        class="ghost"
+        :disabled="batchTranslating"
+        :title="t('editor.batchTranslate')"
+        @click="translateAllMissing"
+      >
+        🌐 {{ batchTranslating ? batchProgress || t('translate.translating') : t('editor.batchTranslate') }}
+        <span v-if="missingCount">({{ missingCount }})</span>
+      </button>
       <div class="spacer"></div>
       <button class="ghost danger" @click="editor.clearAll()">{{ t('editor.clearAll') }}</button>
     </div>
@@ -119,7 +128,7 @@
 </template>
 
 <script setup>
-  import { computed, nextTick, ref, watch } from 'vue'
+  import { computed, nextTick, onMounted, ref, watch } from 'vue'
   import { useI18n } from 'vue-i18n'
   import TagChip from './TagChip.vue'
   import AutocompleteList from './AutocompleteList.vue'
@@ -128,15 +137,16 @@
   import { useEditorStore } from '../../stores/editor'
   import { useLibraryStore } from '../../stores/library'
   import { useSettingsStore } from '../../stores/settings'
+  import { useTranslationStore } from '../../stores/translation'
   import { copyWithToast } from '../../utils/clipboard'
   import { toast } from '../../utils/toast'
   import { stripWeight } from '../../core/prompt/weight'
-  import { isLoraTag } from '../../core/prompt/loraTag'
 
   const { t } = useI18n()
   const editor = useEditorStore()
   const library = useLibraryStore()
   const settings = useSettingsStore()
+  const translations = useTranslationStore()
 
   const textareaRef = ref(null)
   const autocompleteOpen = ref(false)
@@ -152,6 +162,9 @@
   const translating = ref(false)
   const translationDialogOpen = ref(false)
   const translationToken = ref(null)
+  const missingCount = ref(0)
+  const batchTranslating = ref(false)
+  const batchProgress = ref('')
 
   let autocompleteTimer = null
 
@@ -300,8 +313,54 @@
     draggingId.value = null
   }
 
+  // 未译数量：作者改词/译文缓存变化时刷新，用在「批量翻译」按钮上
+  let missingTimer = null
+  watch(
+    () => [editor.promptText, editor.tokens.length, translations.count],
+    () => {
+      clearTimeout(missingTimer)
+      missingTimer = setTimeout(refreshMissingCount, 300)
+    }
+  )
+
+  onMounted(async () => {
+    await nextTick()
+    refreshMissingCount()
+  })
+
+  async function refreshMissingCount() {
+    missingCount.value = (await editor.missingTranslations()).length
+  }
+
+  async function translateAllMissing() {
+    const missing = await editor.missingTranslations()
+    if (!missing.length) {
+      toast.info(t('translate.noMissing'))
+      return
+    }
+    if (!editor.isTranslationConfigured()) {
+      toast.error(t('translate.apiNotConfigured'))
+      return
+    }
+    batchTranslating.value = true
+    try {
+      const rows = await editor.translateTexts(missing.map((item) => item.text), {
+        onProgress: ({ done, total }) => {
+          batchProgress.value = t('translate.progress', { done, total })
+        }
+      })
+      const ok = rows.filter((row) => row.translated).length
+      if (ok) toast.success(t('translate.apiDone', { ok, fail: rows.length - ok }))
+      else toast.error(t('translate.apiFailed', { msg: rows[0]?.error || '' }))
+      await refreshMissingCount()
+    } finally {
+      batchTranslating.value = false
+      batchProgress.value = ''
+    }
+  }
+
   function selectionTextTokens() {
-    return editor.selectionTokens().filter((token) => !token.isRaw && !token.isLoraTag)
+    return editor.selectionTokens().filter((token) => !token.isRaw)
   }
 
   async function translateSelection() {

@@ -1,6 +1,5 @@
 import { uuidv7 } from 'uuidv7'
 import { convertFullwidth, DEFAULT_CONVERT_OPTIONS } from './convert'
-import { isLoraTag } from './loraTag'
 
 export const NEWLINE = '\n'
 export const TAB = '\t'
@@ -48,7 +47,6 @@ function makeToken(text, reused, createId) {
     isRaw,
     isNewline: text === NEWLINE,
     isHidden: false,
-    isLoraTag: isRaw ? false : isLoraTag(text),
     translate: reused?.translate,
     color: reused?.color,
     colorId: reused?.colorId

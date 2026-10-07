@@ -3,7 +3,7 @@ import { ref } from 'vue'
 import { DEFAULT_CONVERT_OPTIONS } from '../core/prompt/convert'
 import { DEFAULT_AUTOCOMPLETE_LIMIT } from '../core/search/autocomplete'
 import { DEFAULT_TAG_COLOR } from '../core/exchange/constants'
-import { DEFAULT_API_TRANSLATION_CONFIG, normalizeConfig } from '../core/translate/apiTranslate'
+import { DEFAULT_API_TRANSLATION_CONFIG, normalizeConfig } from '../core/translate/index.js'
 import { currentLocale, setLocale } from '../i18n'
 
 const STORAGE_KEY = 'weilin_prompt_web_settings'

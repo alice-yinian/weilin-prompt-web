@@ -3,7 +3,7 @@ import { toArray, sortByCreateTime, nextCreateTime } from '../util.js'
 
 /**
  * 历史记录。keyPath = id（自增），排序：create_time 降序（新→旧）。
- * `tag` 字段是上游格式的 JSON 字符串：{prompt, lora, temp_prompt, temp_lora}
+ * `tag` 字段是序列化后的编辑器载荷 JSON：{prompt, temp_prompt}（旧载荷里的 lora/temp_lora 会被忽略）
  * 字段：{id, tag, name, color, create_time, src_id}
  */
 

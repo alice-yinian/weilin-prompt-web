@@ -20,6 +20,8 @@ export const useLibraryStore = defineStore('library', () => {
   const dictReady = ref(false)
   // 词库文本(小写) → {desc, color}，供编辑器双语显示同步查表
   const descMap = ref(new Map())
+  // 中文释义(小写) → {text, color}，供「中 → 英」方向同步反查
+  const descReverseMap = ref(new Map())
 
   const hasData = computed(() => groups.value.length > 0)
 
@@ -34,12 +36,19 @@ export const useLibraryStore = defineStore('library', () => {
 
   function syncDescMap(index) {
     const map = new Map()
+    const reverse = new Map()
     for (const entry of index?.entries || []) {
       const key = String(entry.text || '').trim().toLowerCase()
       if (!key) continue
       map.set(key, { desc: entry.desc || '', color: entry.color || '' })
+      const descKey = String(entry.desc || '').trim().toLowerCase()
+      // 同释义多条时保留最先出现的（与内存索引顺序一致）
+      if (descKey && !reverse.has(descKey)) {
+        reverse.set(descKey, { text: entry.text, color: entry.color || '' })
+      }
     }
     descMap.value = map
+    descReverseMap.value = reverse
     return map
   }
 
@@ -63,6 +72,12 @@ export const useLibraryStore = defineStore('library', () => {
   function descOf(text) {
     const key = String(text || '').trim().toLowerCase()
     return key ? descMap.value.get(key) || null : null
+  }
+
+  // 同步反查：中文释义 → 英文标签
+  function reverseDescOf(text) {
+    const key = String(text || '').trim().toLowerCase()
+    return key ? descReverseMap.value.get(key) || null : null
   }
 
   async function ensureDictIndex() {
@@ -99,10 +114,13 @@ export const useLibraryStore = defineStore('library', () => {
     return tagOnly
   }
 
-  async function translate(phrase) {
+  /**
+   * 离线翻译：默认英→中（词库 desc / 词典 translate），direction='zh2en' 时反查中文 → 英文标签
+   */
+  async function translate(phrase, direction = 'en2zh') {
     const [index, dictEntries] = await Promise.all([ensureTagIndex(), ensureDictIndex()])
     const maps = createTranslationLookup({ tags: index.entries, dict: dictEntries })
-    return translatePhrase(phrase, { maps })
+    return translatePhrase(phrase, { maps, direction })
   }
 
   async function stats() {
@@ -120,6 +138,7 @@ export const useLibraryStore = defineStore('library', () => {
     subgroups.value = []
     tagsBySubgroup.value = {}
     descMap.value = new Map()
+    descReverseMap.value = new Map()
     dictReady.value = false
     invalidateTagIndex()
     loaded.value = false
@@ -134,7 +153,9 @@ export const useLibraryStore = defineStore('library', () => {
     dictReady,
     hasData,
     descMap,
+    descReverseMap,
     descOf,
+    reverseDescOf,
     refresh,
     ensureTagIndex,
     ensureDictIndex,

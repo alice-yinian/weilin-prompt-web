@@ -8,6 +8,24 @@
     <div v-else class="body scroll">
       <section class="block">
         <div class="row wrap">
+          <span class="faint">{{ t('translate.direction') }}</span>
+          <button
+            :class="direction === DIR_EN2ZH ? 'primary' : 'ghost'"
+            @click="setDirection(DIR_EN2ZH)"
+          >
+            {{ t('settings.dirEn2Zh') }}
+          </button>
+          <button
+            :class="direction === DIR_ZH2EN ? 'primary' : 'ghost'"
+            @click="setDirection(DIR_ZH2EN)"
+          >
+            {{ t('settings.dirZh2En') }}
+          </button>
+        </div>
+      </section>
+
+      <section class="block">
+        <div class="row wrap">
           <button class="primary" :disabled="busyAll" @click="translateAll">
             {{ t('translate.translateAll') }}
           </button>
@@ -40,6 +58,55 @@
           <span v-if="batchBusy && progress" class="faint">
             {{ t('translate.progress', progress) }}
           </span>
+        </div>
+      </section>
+
+      <section class="block">
+        <div class="row wrap sub-head">
+          <span class="section-title">{{ t('translate.pickGroup') }}</span>
+          <span class="faint">{{ t('common.count', { n: pickedCount }) }}</span>
+          <div class="spacer"></div>
+          <button class="ghost mini" @click="selectAllSubgroups">{{ t('common.all') }}</button>
+          <button class="ghost mini" :disabled="!pickedCount" @click="clearSubgroupSelection">
+            {{ t('editor.clearSelection') }}
+          </button>
+          <button :disabled="groupBusy || !pickedCount" @click="translatePickedGroups">
+            {{ t('translate.batchGroup') }}
+          </button>
+        </div>
+
+        <p class="faint hint">{{ t('translate.batchGroupHint') }}</p>
+        <p v-if="groupBusy && groupProgress" class="faint hint">
+          {{ t('translate.progress', groupProgress) }}
+        </p>
+
+        <div v-for="group in library.groups" :key="group.p_uuid" class="group-block">
+          <div class="row group-head" @click="toggleGroup(group.p_uuid)">
+            <span class="faint">{{ collapsed.includes(group.p_uuid) ? '▸' : '▾' }}</span>
+            <span class="dot" :style="{ background: group.color }"></span>
+            <span class="group-name">{{ group.name }}</span>
+            <div class="spacer"></div>
+            <button class="ghost mini" @click.stop="selectGroupSubgroups(group.p_uuid)">
+              {{ t('common.all') }}
+            </button>
+          </div>
+          <div v-if="!collapsed.includes(group.p_uuid)" class="sub-list">
+            <label
+              v-for="subgroup in library.subgroupsByGroup[group.p_uuid] || []"
+              :key="subgroup.g_uuid"
+              class="sub-pick"
+            >
+              <input
+                type="checkbox"
+                :checked="Boolean(picked[subgroup.g_uuid])"
+                @change="toggleSubgroup(subgroup.g_uuid)"
+              />
+              <span>{{ subgroup.name }}</span>
+            </label>
+            <p v-if="!(library.subgroupsByGroup[group.p_uuid] || []).length" class="faint hint">
+              {{ t('common.empty') }}
+            </p>
+          </div>
         </div>
       </section>
 
@@ -130,6 +197,18 @@
   const batchBusy = ref(false)
   const rowBusyId = ref('')
   const progress = ref(null)
+  const collapsed = ref([])
+  const picked = ref({})
+  const groupBusy = ref(false)
+  const groupProgress = ref(null)
+
+  // 与 core/translate、设置页共用的方向值
+  const DIR_EN2ZH = 'en2zh'
+  const DIR_ZH2EN = 'zh2en'
+
+  const direction = computed(() => settings.apiTranslation?.direction || DIR_EN2ZH)
+
+  const pickedCount = computed(() => Object.values(picked.value).filter(Boolean).length)
 
   // 词典 color_id → 颜色，与上游 danbooru_manager.vue 的 colorOptions 对齐
   const DICT_COLORS = [
@@ -154,10 +233,8 @@
     manual: 'translate.sourceManual'
   }
 
-  // 只翻译普通标签：raw token 无文本，LoRA 标签是 <wlr:…> 结构，查词库没有意义
-  const tagCandidates = computed(() =>
-    editor.visibleTokens.filter((token) => !token.isRaw && !token.isLoraTag)
-  )
+  // 只翻译普通标签：raw token 无文本，查词库没有意义
+  const tagCandidates = computed(() => editor.visibleTokens.filter((token) => !token.isRaw))
 
   // token 的 id/text 变化时重建行，避免遗留已删除标签的译文行
   const tokenKey = computed(() =>
@@ -204,10 +281,10 @@
     return extractText(value)
   }
 
-  async function lookup(text) {
+  async function lookup(text, dir) {
     const key = cleanTag(text)
     if (!key) return { original: text, translated: '', color: null, colorId: null }
-    const result = await library.translate(key)
+    const result = await library.translate(key, dir)
     return {
       original: text,
       translated: result.translated,
@@ -216,9 +293,97 @@
     }
   }
 
+  // 免费接口（有道 / MyMemory）启用即可用；openai 需要地址与模型，bing 需要 Azure 密钥
   function apiReady() {
-    const config = settings.apiTranslation || {}
-    return Boolean(config.enabled && config.baseUrl && config.model)
+    return editor.isTranslationConfigured()
+  }
+
+  function setDirection(value) {
+    if (direction.value === value) return
+    settings.updateApiTranslation({ direction: value })
+  }
+
+  function toggleGroup(pUuid) {
+    collapsed.value = collapsed.value.includes(pUuid)
+      ? collapsed.value.filter((id) => id !== pUuid)
+      : [...collapsed.value, pUuid]
+  }
+
+  function toggleSubgroup(gUuid) {
+    picked.value = { ...picked.value, [gUuid]: !picked.value[gUuid] }
+  }
+
+  function selectGroupSubgroups(pUuid) {
+    const next = { ...picked.value }
+    for (const subgroup of library.subgroupsByGroup[pUuid] || []) next[subgroup.g_uuid] = true
+    picked.value = next
+  }
+
+  function selectAllSubgroups() {
+    const next = {}
+    for (const group of library.groups) {
+      for (const subgroup of library.subgroupsByGroup[group.p_uuid] || []) {
+        next[subgroup.g_uuid] = true
+      }
+    }
+    picked.value = next
+  }
+
+  function clearSubgroupSelection() {
+    picked.value = {}
+  }
+
+  async function translatePickedGroups() {
+    const selected = Object.keys(picked.value).filter((gUuid) => picked.value[gUuid])
+    // 未配置接口时不发请求，避免用户误以为已调用
+    if (!apiReady()) {
+      toast.error(t('translate.apiNotConfigured'))
+      return
+    }
+    if (!selected.length) {
+      toast.info(t('translate.empty'))
+      return
+    }
+
+    const texts = []
+    const seen = new Set()
+    for (const gUuid of selected) {
+      for (const tag of await library.tagsOf(gUuid)) {
+        const text = String(tag?.text || '').trim()
+        if (!text || seen.has(text)) continue
+        seen.add(text)
+        texts.push(text)
+      }
+    }
+    if (!texts.length) {
+      toast.info(t('translate.noMissing'))
+      return
+    }
+
+    groupBusy.value = true
+    groupProgress.value = { done: 0, total: texts.length }
+    try {
+      // translateTexts 内部跳过词库/缓存已有的词，只对缺失词发请求
+      const results = await editor.translateTexts(texts, {
+        onProgress: (info) => {
+          groupProgress.value = { done: info.done, total: info.total }
+        }
+      })
+      // source=api 才代表真的发过请求；全部命中词库/缓存说明没有缺失词
+      if (!results.some((item) => item.source === 'api')) {
+        toast.info(t('translate.noMissing'))
+      } else {
+        const ok = results.filter((item) => item.translated).length
+        toast.success(t('translate.apiDone', { ok, fail: results.length - ok }))
+      }
+      syncRows()
+      await refreshMissing()
+    } catch (error) {
+      toast.error(t('translate.apiFailed', { msg: error?.message || String(error) }))
+    } finally {
+      groupBusy.value = false
+      groupProgress.value = null
+    }
   }
 
   // 译文来源以 store 为准，用户正在编辑的草稿优先保留，避免输入被覆盖
@@ -259,7 +424,7 @@
     busyAll.value = true
     try {
       const next = []
-      for (const part of parts) next.push(await lookup(part))
+      for (const part of parts) next.push(await lookup(part, direction.value))
       segments.value = next
     } finally {
       busyAll.value = false
@@ -508,6 +673,51 @@
     border-top: 1px solid var(--border);
     padding-top: 8px;
     margin-top: 4px;
+  }
+
+  .group-block {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+
+  .group-head {
+    align-items: center;
+    gap: 4px;
+    padding: 3px 4px;
+    border-radius: var(--radius-sm);
+    cursor: pointer;
+    font-size: 12px;
+  }
+
+  .group-head:hover {
+    background: var(--bg-elev-2);
+  }
+
+  .dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    flex-shrink: 0;
+  }
+
+  .group-name {
+    font-weight: 600;
+  }
+
+  .sub-list {
+    display: flex;
+    flex-direction: column;
+    padding-left: 18px;
+  }
+
+  .sub-pick {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    padding: 2px 0;
+    font-size: 12px;
+    cursor: pointer;
   }
 
   .empty-state {

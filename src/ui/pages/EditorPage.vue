@@ -41,7 +41,6 @@
   import { useI18n } from 'vue-i18n'
   import PromptEditor from '../editor/PromptEditor.vue'
   import TagPickerPanel from '../editor/panels/TagPickerPanel.vue'
-  import LoraPanel from '../editor/panels/LoraPanel.vue'
   import RandomPanel from '../editor/panels/RandomPanel.vue'
   import SnippetPanel from '../editor/panels/SnippetPanel.vue'
   import HistoryPanel from '../editor/panels/HistoryPanel.vue'
@@ -66,7 +65,6 @@
   const tabs = [
     { key: 'tags', label: 'editor.panelTags', component: TagPickerPanel },
     { key: 'translate', label: 'editor.panelTranslate', component: TranslatePanel },
-    { key: 'lora', label: 'editor.panelLora', component: LoraPanel },
     { key: 'random', label: 'editor.panelRandom', component: RandomPanel },
     { key: 'snippets', label: 'editor.panelSnippets', component: SnippetPanel },
     { key: 'history', label: 'editor.panelHistory', component: HistoryPanel },

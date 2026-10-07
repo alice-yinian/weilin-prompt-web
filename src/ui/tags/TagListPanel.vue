@@ -8,6 +8,13 @@
         :disabled="!hasSubgroup"
         @input="$emit('update:query', $event.target.value)"
       />
+      <button
+        :disabled="batchState.busy"
+        :title="t('tags.batchImagesHint')"
+        @click="openBatchPicker"
+      >
+        {{ batchState.busy ? `${batchState.done}/${batchState.total}` : t('tags.batchImages') }}
+      </button>
       <button class="primary" :disabled="!hasSubgroup" :title="t('tags.newTag')" @click="$emit('add')">
         ＋
       </button>
@@ -122,6 +129,15 @@
       @change="onImagePicked"
     />
 
+    <input
+      ref="batchInput"
+      class="hidden-input"
+      type="file"
+      accept="image/*"
+      multiple
+      @change="onBatchPicked"
+    />
+
     <Teleport to="body">
       <div
         v-if="preview.show"
@@ -151,7 +167,9 @@
     // 搜索过滤时上下移动的参照项不在可见列表里，禁用避免混乱
     sortable: { type: Boolean, default: true },
     // t_uuid → 缩略图 objectURL（由父组件创建/回收）
-    imageUrls: { type: Object, default: () => ({}) }
+    imageUrls: { type: Object, default: () => ({}) },
+    // 批量导入进度：{busy, done, total}，由父组件推进（按钮上显示 done/total）
+    batchState: { type: Object, default: () => ({ busy: false, done: 0, total: 0 }) }
   })
 
   const emit = defineEmits([
@@ -164,7 +182,8 @@
     'move',
     'delete-selected',
     'upload-image',
-    'remove-image'
+    'remove-image',
+    'batch-images'
   ])
 
   const { t } = useI18n()
@@ -175,6 +194,7 @@
   const someSelected = computed(() => !allSelected.value && props.visible.some((tag) => props.selected.includes(tag.t_uuid)))
 
   const imageInput = ref(null)
+  const batchInput = ref(null)
   const pickTarget = ref('')
   const dropTarget = ref('')
 
@@ -196,6 +216,21 @@
     const file = event.target.files?.[0]
     if (imageInput.value) imageInput.value.value = ''
     if (file) emit('upload-image', { t_uuid: pickTarget.value, file })
+  }
+
+  /* ---------- 批量导入预览图 ---------- */
+
+  function openBatchPicker() {
+    if (props.batchState?.busy) return
+    // 清空 value：连续两次选同一批文件也要能触发 change
+    if (batchInput.value) batchInput.value.value = ''
+    batchInput.value?.click()
+  }
+
+  function onBatchPicked(event) {
+    const files = Array.from(event.target.files || [])
+    if (batchInput.value) batchInput.value.value = ''
+    if (files.length) emit('batch-images', files)
   }
 
   function onRemoveImage(tag) {

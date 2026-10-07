@@ -4,13 +4,6 @@ import { serialize } from '../../src/core/prompt/serialize'
 import { splitSegments, tokenize, NEWLINE, TAB } from '../../src/core/prompt/tokenize'
 import { applyWeight, formatWeight, getWeight, stripWeight } from '../../src/core/prompt/weight'
 import { addBracket, isWrappedBy, listLayers, removeBracket, toggleBracket } from '../../src/core/prompt/brackets'
-import {
-  buildLoraTag,
-  isLoraTag,
-  parseLoraTag,
-  stripLoraTags,
-  updateLoraTag
-} from '../../src/core/prompt/loraTag'
 import { countTokens } from '../../src/core/prompt/tokenCount'
 
 const ids = () => {
@@ -72,12 +65,6 @@ describe('splitSegments / tokenize', () => {
     expect(second.filter((token) => token.isHidden)).toHaveLength(1)
     expect(second.filter((token) => token.isHidden)[0].id).toBe(first[0].id)
   })
-
-  it('识别 LoRA 标签', () => {
-    const tokens = tokenize('<wlr:foo:1:1:1>, cat', [], { createId: ids() })
-    expect(tokens[0].isLoraTag).toBe(true)
-    expect(tokens[1].isLoraTag).toBe(false)
-  })
 })
 
 describe('serialize', () => {
@@ -87,8 +74,7 @@ describe('serialize', () => {
       text,
       isRaw: text === NEWLINE || text === TAB,
       isNewline: text === NEWLINE,
-      isHidden: false,
-      isLoraTag: false
+      isHidden: false
     }))
 
   it('每行末尾补逗号，含最后一行', () => {
@@ -177,53 +163,6 @@ describe('brackets', () => {
   })
 })
 
-describe('loraTag', () => {
-  it('生成 4 字段标签', () => {
-    expect(buildLoraTag({ name: 'style.safetensors', modelWeight: 0.8, textWeight: 0.7, triggerWeight: 1 })).toBe(
-      '<wlr:style:0.8:0.7:1>'
-    )
-  })
-
-  it('缺省权重为 1', () => {
-    expect(buildLoraTag({ name: 'style' })).toBe('<wlr:style:1:1:1>')
-  })
-
-  it('解析 4 字段', () => {
-    expect(parseLoraTag('<wlr:style:0.8:0.7:0.5>')).toEqual({
-      name: 'style',
-      modelWeight: 0.8,
-      textWeight: 0.7,
-      triggerWeight: 0.5,
-      legacy: false
-    })
-  })
-
-  it('兼容解析旧 3 字段并把文本权重作为触发词权重', () => {
-    expect(parseLoraTag('<wlr:style:0.8:0.7>')).toEqual({
-      name: 'style',
-      modelWeight: 0.8,
-      textWeight: 0.7,
-      triggerWeight: 0.7,
-      legacy: true
-    })
-  })
-
-  it('非 LoRA 文本返回 null', () => {
-    expect(parseLoraTag('cat')).toBe(null)
-    expect(isLoraTag('cat')).toBe(false)
-    expect(isLoraTag('<wlr:a:1:1:1>')).toBe(true)
-  })
-
-  it('更新权重保持 4 字段', () => {
-    expect(updateLoraTag('<wlr:a:1:1:1>', { modelWeight: 0.5 })).toBe('<wlr:a:0.5:1:1>')
-  })
-
-  it('移除标签后收敛逗号', () => {
-    expect(stripLoraTags('<wlr:a:1:1:1>, cat, dog')).toBe('cat, dog')
-    expect(stripLoraTags('cat, <wlr:a:1:1:1>, dog')).toBe('cat, dog')
-    expect(stripLoraTags('cat,,<wlr:a:1:1:1>,dog')).toBe('cat,dog')
-  })
-})
 
 describe('countTokens', () => {
   it('按空白计数', () => {

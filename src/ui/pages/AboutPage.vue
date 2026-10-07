@@ -33,7 +33,6 @@
       <h3>{{ t('about.differences') }}</h3>
       <ul class="facts">
         <li>{{ t('about.diffList.static') }}</li>
-        <li>{{ t('about.diffList.lora') }}</li>
         <li>{{ t('about.diffList.removed') }}</li>
       </ul>
       <p class="muted">{{ t('about.importHint') }}</p>

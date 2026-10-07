@@ -15,8 +15,8 @@
         {{ t('tags.exportSelectedYAML') }}
       </button>
       <span v-if="imageCount" class="faint hint">{{ t('tags.imagesCount', { n: imageCount }) }}</span>
-      <button v-if="imageCount" class="danger" :title="t('tags.removeImage')" @click="clearAllImages">
-        {{ t('tags.removeImage') }}
+      <button v-if="imageCount" class="danger" :title="t('tags.clearImages')" @click="clearAllImages">
+        {{ t('tags.clearImages') }}
       </button>
       <span class="spacer" />
       <span class="faint hint">{{ t('tags.importHint') }}</span>
@@ -60,6 +60,7 @@
         :select-hint="t('tags.selectSubgroupHint')"
         :sortable="!tagQuery.trim()"
         :image-urls="imageUrls"
+        :batch-state="batchState"
         @update:query="tagQuery = $event"
         @add="openCreateTag"
         @select="toggleTagSelection"
@@ -70,6 +71,7 @@
         @delete-selected="deleteSelectedTags"
         @upload-image="onUploadImage"
         @remove-image="onRemoveImage"
+        @batch-images="onBatchImages"
       />
     </div>
 
@@ -142,6 +144,7 @@
   import TagEditDialog from '../tags/TagEditDialog.vue'
   import TagListPanel from '../tags/TagListPanel.vue'
   import TreeListPanel from '../tags/TreeListPanel.vue'
+  import { buildTagIndex, isImageFile, matchTagFile } from '../tags/filenameMatch'
   import { writeImport } from '../tags/importWrite'
 
   const { t } = useI18n()
@@ -157,6 +160,8 @@
   // t_uuid → 缩略图 objectURL（仅当前二级分组的标签，切换/卸载时回收）
   const imageUrls = ref({})
   const imageCount = ref(0)
+  // 批量导入进度，按钮上显示 done/total
+  const batchState = reactive({ busy: false, done: 0, total: 0 })
 
   const editState = reactive({ open: false, type: 'group', mode: 'create', target: null, name: '', color: '' })
   const tagDialog = reactive({ open: false, target: null, text: '', desc: '', color: '' })
@@ -598,8 +603,58 @@
     }
   }
 
+  // 批量导入：文件名先精确匹配 t_uuid、再匹配标签文本（忽略大小写，空格/下划线等价）。
+  // 串行处理，避免一次把几十张图全解码进内存；进度写进 batchState 由按钮显示。
+  async function onBatchImages(files) {
+    const list = Array.from(files || [])
+    if (!list.length || batchState.busy) return
+    batchState.busy = true
+    batchState.done = 0
+    batchState.total = list.length
+    try {
+      // 建一次索引：全量标签按 uuid 与归一化文本各查一遍
+      const index = buildTagIndex(await listAllTags())
+      let ok = 0
+      let skipped = 0
+      for (const file of list) {
+        try {
+          const hit = isImageFile(file) ? matchTagFile(file.name, index) : null
+          if (!hit) {
+            skipped += 1
+          } else {
+            let blob = file
+            let mime = file.type || 'image/webp'
+            // 压缩失败时 compressImage 会把原图交还，照样能存
+            if (settings.imageCompress) {
+              const compressed = await compressImage(file, {
+                maxSize: settings.imageMaxSize,
+                quality: settings.imageQuality
+              })
+              blob = compressed.blob
+              mime = compressed.mime || mime
+            }
+            await putTagImage(hit.t_uuid, blob, { mime, name: file.name })
+            ok += 1
+          }
+        } catch (error) {
+          skipped += 1
+        }
+        batchState.done += 1
+      }
+      if (ok) {
+        await loadImages()
+        await refreshImageCount()
+      }
+      toast.success(t('tags.batchImagesDone', { ok, skipped }))
+    } catch (error) {
+      toast.error(t('toast.error', { msg: error.message || String(error) }))
+    } finally {
+      batchState.busy = false
+    }
+  }
+
   async function clearAllImages() {
-    const label = `${t('tags.removeImage')}（${t('tags.imagesCount', { n: imageCount.value })}）`
+    const label = `${t('tags.clearImages')}（${t('tags.imagesCount', { n: imageCount.value })}）`
     if (!window.confirm(label)) return
     try {
       await clearTagImages()

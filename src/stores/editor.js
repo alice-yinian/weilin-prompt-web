@@ -4,9 +4,8 @@ import { tokenize, createToken, NEWLINE, TAB } from '../core/prompt/tokenize'
 import { serialize } from '../core/prompt/serialize'
 import { applyWeight } from '../core/prompt/weight'
 import { toggleBracket, addBracket, removeBracket } from '../core/prompt/brackets'
-import { buildLoraTag, parseLoraTag, isLoraTag, updateLoraTag } from '../core/prompt/loraTag'
 import { countTokens } from '../core/prompt/tokenCount'
-import { translateTexts as apiTranslateTexts } from '../core/translate/apiTranslate'
+import { isConfigured, translateTexts as apiTranslateTexts } from '../core/translate/index.js'
 import { useSettingsStore } from './settings'
 import { useTranslationStore } from './translation'
 import { useLibraryStore } from './library'
@@ -25,7 +24,6 @@ export const useEditorStore = defineStore('editor', () => {
   const visibleTokens = computed(() => tokens.value.filter((token) => !token.isHidden))
   const hiddenTokens = computed(() => tokens.value.filter((token) => token.isHidden))
   const textTokens = computed(() => tokens.value.filter((token) => !token.isRaw))
-  const loraTokens = computed(() => tokens.value.filter((token) => token.isLoraTag))
 
   function findById(id) {
     return tokens.value.find((token) => token.id === id) || null
@@ -198,49 +196,20 @@ export const useEditorStore = defineStore('editor', () => {
     selection.value = []
   }
 
-  function addLoraTag(payload) {
-    const tag = payload && payload.tag ? payload.tag : buildLoraTag(payload || {})
-    return insertTag(tag)
-  }
-
-  function updateLoraToken(id, patch) {
-    const token = findById(id)
-    if (!token) return
-    const parsed = parseLoraTag(token.text)
-    if (!parsed) return
-    updateToken(id, { text: updateLoraTag(token.text, patch) })
-  }
-
-  // ---- 历史记录载荷：与上游 {prompt, lora, temp_prompt, temp_lora} 对齐 ----
+  // ---- 历史记录载荷：{prompt, temp_prompt}（旧版载荷里的 lora 字段已随 LoRA 功能移除）----
   function buildHistoryPayload() {
-    const visibleLoras = loraTokens.value.filter((token) => !token.isHidden).map(toLoraRecord)
-    const allLoras = loraTokens.value.map(toLoraRecord)
     return {
       prompt: promptText.value,
-      lora: visibleLoras.length ? visibleLoras : '',
       temp_prompt: tokens.value.map((token) => ({
         id: token.id,
         text: token.text,
         isRaw: !!token.isRaw,
         isNewline: !!token.isNewline,
         isHidden: !!token.isHidden,
-        isLoraTag: !!token.isLoraTag,
         translate: token.translate,
         color: token.color,
         colorId: token.colorId
-      })),
-      temp_lora: allLoras.length ? allLoras : ''
-    }
-  }
-
-  function toLoraRecord(token) {
-    const parsed = parseLoraTag(token.text) || {}
-    return {
-      name: parsed.name,
-      modelWeight: parsed.modelWeight,
-      textWeight: parsed.textWeight,
-      triggerWeight: parsed.triggerWeight,
-      isHidden: !!token.isHidden
+      }))
     }
   }
 
@@ -296,7 +265,6 @@ export const useEditorStore = defineStore('editor', () => {
       isRaw,
       isNewline: item.isNewline ?? text === NEWLINE,
       isHidden: !!item.isHidden,
-      isLoraTag: item.isLoraTag ?? (!isRaw && isLoraTag(text)),
       translate: item.translate,
       color: item.color,
       colorId: item.colorId
@@ -319,7 +287,18 @@ export const useEditorStore = defineStore('editor', () => {
     return libraryRef
   }
 
+  function translationDirection() {
+    return useSettingsStore().apiTranslation?.direction === 'zh2en' ? 'zh2en' : 'en2zh'
+  }
+
   function resolveTranslation(text) {
+    // 中→英：先用「中文释义 → 英文标签」反查表
+    if (translationDirection() === 'zh2en') {
+      const reverse = library().reverseDescOf(text)
+      if (reverse?.text) {
+        return { translated: reverse.text, source: 'library', color: reverse.color }
+      }
+    }
     const fromLibrary = library().descOf(text)
     if (fromLibrary?.desc) {
       return { translated: fromLibrary.desc, source: 'library', color: fromLibrary.color }
@@ -335,7 +314,7 @@ export const useEditorStore = defineStore('editor', () => {
   function attachTranslations(list) {
     let changed = false
     const next = list.map((token) => {
-      if (token.isRaw || token.isLoraTag) return token
+      if (token.isRaw) return token
       const hit = resolveTranslation(token.text)
       if (!hit) {
         if (token.translate === undefined && token.translateSource === undefined) return token
@@ -361,6 +340,10 @@ export const useEditorStore = defineStore('editor', () => {
     return next
   }
 
+  function isTranslationConfigured() {
+    return isConfigured(useSettingsStore().apiTranslation)
+  }
+
   function translationOf(token) {
     if (!token?.translate) return null
     return { translated: token.translate, source: token.translateSource || 'cache' }
@@ -375,7 +358,7 @@ export const useEditorStore = defineStore('editor', () => {
   }
 
   function textTokensNeedingTranslation() {
-    return tokens.value.filter((token) => !token.isRaw && !token.isLoraTag && !token.translate)
+    return tokens.value.filter((token) => !token.isRaw && !token.translate)
   }
 
   // 编辑器内未译且词库/缓存都没有的标签
@@ -413,7 +396,7 @@ export const useEditorStore = defineStore('editor', () => {
     if (!pending.length) return results
 
     const config = settings.apiTranslation
-    if (!config?.baseUrl || !config?.model) {
+    if (!isConfigured(config)) {
       for (const text of pending) {
         results.push({ text, translated: '', source: 'api', error: 'not-configured' })
       }
@@ -442,7 +425,7 @@ export const useEditorStore = defineStore('editor', () => {
     const targetIds = ids && ids.length ? ids : selection.value
     const set = new Set(targetIds)
     const targets = tokens.value.filter(
-      (token) => set.has(token.id) && !token.isRaw && !token.isLoraTag
+      (token) => set.has(token.id) && !token.isRaw
     )
     if (!targets.length) return { ok: 0, fail: 0, total: 0 }
     const rows = await translateTexts(targets.map((token) => token.text), options)
@@ -488,7 +471,6 @@ export const useEditorStore = defineStore('editor', () => {
     tokenCount,
     visibleTokens,
     hiddenTokens,
-    loraTokens,
     // text sync
     setInput,
     syncText,
@@ -516,9 +498,6 @@ export const useEditorStore = defineStore('editor', () => {
     clearSelection,
     selectAll,
     selectionTokens,
-    // LoRA
-    addLoraTag,
-    updateLoraToken,
     // 载荷
     buildHistoryPayload,
     loadPayload,
@@ -528,6 +507,7 @@ export const useEditorStore = defineStore('editor', () => {
     lookupTranslation,
     missingTranslations,
     translateTexts,
+    isTranslationConfigured,
     translateSelectedTokens,
     saveManualTranslation,
     clearTranslation,

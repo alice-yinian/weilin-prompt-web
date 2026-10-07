@@ -80,7 +80,7 @@
 
     <div class="card">
       <h3>{{ t('settings.apiTranslation') }}</h3>
-      <p class="faint hint">{{ t('settings.corsHint') }}</p>
+      <p class="faint hint">{{ t('settings.providerHint') }}</p>
       <label class="check-row">
         <input
           type="checkbox"
@@ -89,6 +89,58 @@
         />
         <span>{{ t('settings.apiEnabled') }}</span>
       </label>
+      <div class="field">
+        <label>{{ t('settings.translateProvider') }}</label>
+        <select
+          :value="settings.apiTranslation.provider"
+          @change="settings.updateApiTranslation({ provider: $event.target.value })"
+        >
+          <option v-for="provider in providers" :key="provider.id" :value="provider.id">
+            {{ t(provider.labelKey) }}
+          </option>
+        </select>
+      </div>
+
+      <div class="field">
+        <label>{{ t('settings.defaultDirection') }}</label>
+        <div class="row">
+          <button
+            :class="{ primary: settings.apiTranslation.direction === 'en2zh' }"
+            @click="settings.updateApiTranslation({ direction: 'en2zh' })"
+          >
+            {{ t('settings.dirEn2Zh') }}
+          </button>
+          <button
+            :class="{ primary: settings.apiTranslation.direction === 'zh2en' }"
+            @click="settings.updateApiTranslation({ direction: 'zh2en' })"
+          >
+            {{ t('settings.dirZh2En') }}
+          </button>
+        </div>
+      </div>
+
+      <template v-if="needsBing">
+        <div class="field">
+          <label>{{ t('settings.bingKey') }}</label>
+          <input
+            type="password"
+            autocomplete="off"
+            :value="settings.apiTranslation.bingKey"
+            @change="settings.updateApiTranslation({ bingKey: $event.target.value })"
+          />
+          <span class="faint hint">{{ t('settings.bingHint') }}</span>
+        </div>
+        <div class="field">
+          <label>{{ t('settings.bingRegion') }}</label>
+          <input
+            :value="settings.apiTranslation.bingRegion"
+            placeholder="global"
+            @change="settings.updateApiTranslation({ bingRegion: $event.target.value })"
+          />
+        </div>
+      </template>
+
+      <template v-if="needsOpenAi">
       <div class="field">
         <label>{{ t('settings.apiBaseUrl') }}</label>
         <input
@@ -138,9 +190,6 @@
             @change="settings.updateApiTranslation({ batchSize: Number($event.target.value) })"
           />
         </label>
-        <button :disabled="testing" @click="runTestConnection">
-          {{ testing ? t('settings.testing') : t('settings.testConnection') }}
-        </button>
       </div>
       <div class="field">
         <label>{{ t('settings.apiProxyPrefix') }}</label>
@@ -149,6 +198,14 @@
           placeholder="https://your-gateway.example.com/"
           @change="settings.updateApiTranslation({ proxyPrefix: $event.target.value })"
         />
+      </div>
+      </template>
+
+      <div class="row wrap">
+        <button :disabled="testing" @click="runTestConnection">
+          {{ testing ? t('settings.testing') : t('settings.testConnection') }}
+        </button>
+        <span class="faint hint">{{ t('settings.providerHint') }}</span>
       </div>
     </div>
 
@@ -201,12 +258,18 @@
   import { computed, ref } from 'vue'
   import { useI18n } from 'vue-i18n'
   import { useSettingsStore } from '../../stores/settings'
-  import { testConnection } from '../../core/translate/apiTranslate'
+  import { PROVIDERS, testConnection } from '../../core/translate/index.js'
   import { toast } from '../../utils/toast'
 
   const { t } = useI18n()
   const settings = useSettingsStore()
   const testing = ref(false)
+
+  // 服务清单以 core/translate 的 PROVIDERS 为唯一来源
+  const providers = PROVIDERS
+
+  const needsOpenAi = computed(() => settings.apiTranslation.provider === 'openai')
+  const needsBing = computed(() => settings.apiTranslation.provider === 'bing')
 
   const conversionItems = [
     { key: 'comma', label: 'settings.convertComma' },

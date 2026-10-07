@@ -103,3 +103,96 @@ describe('translatePhrase', () => {
     expect(translatePhrase('hair', { maps }).translated).toBe('头发')
   })
 })
+
+describe('createTranslationLookup reverseByDesc', () => {
+  it('按 desc/translate 去首尾空格并小写建键，tags 优先于 dict', () => {
+    const maps = createTranslationLookup({
+      tags: [
+        { text: 'long hair', desc: ' 长发 ', color: 'rgba(1,2,3,.4)' },
+        { text: 'solo_focus', desc: '单人', color: 'rgba(7,7,7,.4)' }
+      ],
+      dict: [
+        { tag: 'solo', translate: '单人', color_id: 0 },
+        { tag: 'rating_r18', translate: 'R18', color_id: 3 }
+      ]
+    })
+
+    expect(maps.reverseByDesc).toBeInstanceOf(Map)
+    expect(maps.reverseByDesc.get('长发')).toMatchObject({ text: 'long hair', color: 'rgba(1,2,3,.4)' })
+    const solo = maps.reverseByDesc.get('单人')
+    expect(solo.text).toBe('solo_focus')
+    expect(solo.color).toBe('rgba(7,7,7,.4)')
+    expect(solo.colorId).toBeNull()
+    expect(maps.reverseByDesc.get('r18').text).toBe('rating_r18')
+  })
+})
+
+describe('translatePhrase zh2en', () => {
+  const tags = [
+    { text: 'long hair', desc: '长发', color: 'rgba(1,2,3,.4)' },
+    { text: 'hair', desc: '头发', color: 'rgba(9,9,9,.4)' },
+    { text: 'cat', desc: '猫', color: 'rgba(5,5,5,.4)' }
+  ]
+  const dict = [
+    { tag: 'solo', translate: '单人', color_id: 0 },
+    { tag: 'smile', translate: '微笑', color_id: 2 }
+  ]
+  const maps = createTranslationLookup({ tags, dict })
+
+  it('整句中文转英文', () => {
+    const result = translatePhrase('长发 猫', { maps, direction: 'zh2en' })
+    expect(result.translated).toBe('long hair cat')
+    expect(result.original).toBe('长发 猫')
+  })
+
+  it('贪婪匹配最长子短语', () => {
+    const greedyMaps = createTranslationLookup({
+      tags: [
+        { text: 'red', desc: '红' },
+        { text: 'hair', desc: '发' },
+        { text: 'red hair', desc: '红 发' }
+      ],
+      dict: []
+    })
+    expect(translatePhrase('红 发', { maps: greedyMaps, direction: 'zh2en' }).translated).toBe('red hair')
+    expect(translatePhrase('红 蓝', { maps: greedyMaps, direction: 'zh2en' }).translated).toBe('red 蓝')
+  })
+
+  it('中英混排：未命中的英文原样保留', () => {
+    expect(translatePhrase('长发 cat 微笑', { maps, direction: 'zh2en' }).translated).toBe('long hair cat smile')
+  })
+
+  it('未命中的中文原样保留', () => {
+    expect(translatePhrase('长发 未知词', { maps, direction: 'zh2en' }).translated).toBe('long hair 未知词')
+  })
+
+  it('颜色取最后一个命中', () => {
+    const result = translatePhrase('长发 猫', { maps, direction: 'zh2en' })
+    expect(result.color).toBe('rgba(5,5,5,.4)')
+    expect(result.colorId).toBeNull()
+  })
+
+  it('词典命中带出 color_id', () => {
+    const result = translatePhrase('单人 微笑', { maps, direction: 'zh2en' })
+    expect(result.translated).toBe('solo smile')
+    expect(result.colorId).toBe(2)
+  })
+
+  it('大小写不敏感（反查键已小写）', () => {
+    const mixedMaps = createTranslationLookup({ tags: [], dict: [{ tag: 'rating_r18', translate: 'R18', color_id: 3 }] })
+    expect(translatePhrase('r18', { maps: mixedMaps, direction: 'zh2en' }).translated).toBe('rating_r18')
+  })
+
+  it('不传 direction 时等同 en2zh', () => {
+    expect(translatePhrase('cat', { maps }).translated).toBe('猫')
+    expect(translatePhrase('猫', { maps }).translated).toBe('猫')
+  })
+
+  it('空短语返回空结果', () => {
+    expect(translatePhrase('', { maps, direction: 'zh2en' })).toMatchObject({ original: '', translated: '' })
+  })
+
+  it('手写 maps 缺反查表时回落到 tags/dict', () => {
+    expect(translatePhrase('猫', { tags, dict, direction: 'zh2en' }).translated).toBe('cat')
+  })
+})
