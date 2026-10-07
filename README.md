@@ -59,7 +59,7 @@ git tag -a v0.3.3 -m "v0.3.3" && git push github v0.3.3
 | `weilin-prompt-web-vX.Y.Z-single.zip` | 同上，zip 形式方便下载 |
 | `SHA256SUMS.txt` | 全部产物的校验和 |
 
-发布说明自动取自 `CHANGELOG.md` 中对应版本的段落。
+发布说明自动取自 `CHANGELOG.md` 中对应版本的段落。流水线用 `actions/checkout@v7` / `setup-node@v7` / `upload-artifact@v7`（Node 24 运行时）。
 
 ## 部署（例如 Cloudflare Pages）
 
