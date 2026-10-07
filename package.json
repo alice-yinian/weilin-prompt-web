@@ -12,10 +12,11 @@
     "preview": "vite preview",
     "test": "vitest run",
     "test:watch": "vitest",
-    "deploy:cf": "wrangler pages deploy dist --project-name=weilin-prompt-web",
-    "preview:cf": "wrangler pages dev dist",
+    "deploy:cf": "npm run build && wrangler deploy",
     "check-version": "node scripts/check-version.mjs",
-    "check-lock": "node scripts/check-lock.mjs"
+    "check-lock": "node scripts/check-lock.mjs",
+    "dev:cf": "npm run build && wrangler dev",
+    "check:cf": "npm run build && wrangler deploy --dry-run"
   },
   "dependencies": {
     "idb": "^8.0.0",

@@ -1,101 +1,115 @@
-# 部署到 Cloudflare Pages
+# 部署到 Cloudflare（wrangler / Workers 静态资源）
 
-本项目是**纯静态站点**：没有服务端、没有 Cloudflare Functions / D1 / KV 依赖。
-词库、译文缓存、预览图都存在**访问者自己的浏览器**（IndexedDB）里，站点只负责发文件。
+本项目是**纯静态站点**，Cloudflare 侧统一使用 **wrangler 方式**：
+`npm run build` 产出 `dist/`，由 `wrangler.jsonc` 把它作为 **Workers 静态资源**发布。
 
-- 构建命令：`npm run build`（安装用 `npm ci`，锁文件已覆盖全部平台可选依赖，npm 10/11 均实测通过）
-- 输出目录：`dist`
-- 路由：hash 路由（`/#/editor`），所以**不需要** SPA 回退规则，也不会出现刷新 404
-- 体积：`dist/` 约 0.6 MB（Pages 免费版限制是单文件 25 MB / 20000 个文件，余量很大）
+- 没有服务端逻辑、没有 `main` 入口、没有 D1/KV/R2 绑定
+- 词库、译文缓存、预览图都存在**访问者自己的浏览器**（IndexedDB），站点只负责发文件
+- 客户端是 hash 路由（`/#/editor`），`not_found_handling: single-page-application` 只是兜底
+- 体积：`dist/` 约 0.6 MB / 41 个文件（免费额度绰绰有余）
 
----
+## 唯一配置源：`wrangler.jsonc`
 
-## 路径 A：网页端从 GitHub 仓库导入（最常用）
+```jsonc
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "weilin-prompt-web",
+  "compatibility_date": "2026-10-06",
+  "assets": {
+    "directory": "./dist",                              // 必须是构建产物目录
+    "not_found_handling": "single-page-application"     // 未知路径回 index.html
+  }
+}
+```
 
-> 前提：代码已经推到 GitHub（本仓库远端为 `alice-yinian/weilin-prompt-web`，`main` 分支）。
-
-### 步骤
-
-1. 打开 **https://dash.cloudflare.com** → 左侧选 **Workers & Pages**（新版叫 **Compute (Workers)** → Workers & Pages）
-2. 点 **Create application** → 切到 **Pages** 标签 → **Connect to Git**
-3. **授权 GitHub**：首次会跳转安装 *Cloudflare Pages* GitHub App
-   - 选 **Only select repositories** → 勾选 `weilin-prompt-web`（私有仓库必须勾，否则 Pages 读不到代码）
-   - 授权后回到 Cloudflare，列表里选中该仓库 → **Begin setup**
-4. **Set up builds and deployments**（按下面这张表逐项填）：
-
-   | 字段（界面原文） | 填什么 | 说明 |
-   |---|---|---|
-   | Project name | `weilin-prompt-web` | 决定默认域名 `https://weilin-prompt-web.pages.dev`；被占用会自动加后缀 |
-   | Production branch | `main` | 推送到这个分支 = 生产部署 |
-   | Framework preset | `Vue`（或 `None`） | 不影响结果，我们用自己的构建命令 |
-   | Build command | `npm ci && npm run build` | 用 `npm ci` 保证锁文件版本一致 |
-   | Build output directory | `dist` | **必须填 `dist`**，填错会白屏 |
-   | Root directory | 留空（仓库根目录） | 本仓库代码就在根目录，不要填 `src` |
-   | Environment variables | `NODE_VERSION` = `22` | Vite 6 需要 Node 18+；显式指定避免平台默认值变化 |
-5. 点 **Save and deploy**。第一次构建约 30–60 秒，完成后给一个 `*.pages.dev` 域名。
-
-### 之后怎么发版
-
-- 往 `main` 推提交 → 自动生产部署（`https://weilin-prompt-web.pages.dev`）
-- 往其他分支推 / 开 PR → 自动生成 **Preview 部署**（独立临时域名，用来验收）
-  - 你仓库里若出现 Dependabot 分支（`dependabot/npm_and_yarn/...`），它会各自生成一套预览部署，无害；不需要就在 GitHub 上关掉/dependabot 分支删掉
-- 回滚：Pages → 项目 → **Deployments** → 选历史上任意一次部署 → **Rollback**
-
-### 这个项目在 Pages 上不需要做的事
-
-| 常见配置 | 本项目 |
+| 项 | 说明 |
 |---|---|
-| SPA 回退规则 `_redirects`（`/* /index.html 200`） | **不需要**：用的是 hash 路由（`/#/editor`），刷新不会 404 |
-| Functions / D1 / KV / R2 绑定 | **不需要**：纯静态，数据全在访问者浏览器 IndexedDB |
-| 环境变量里的密钥 | **不需要**：翻译 API Key 由访问者在「设置」页自己填，存在他的浏览器里 |
-| 构建产物里的 `_headers` | **已内置**（`public/_headers`），构建时自动复制到 `dist/`，平台自动读取 |
+| `name` | Worker 名称，决定默认域名 `https://<name>.<子域>.workers.dev` |
+| `assets.directory` | `./dist`，**部署前必须先 `npm run build`**（脚本已帮你串好） |
+| `_headers` / `_redirects` | `dist/` 里的这两个文件会被静态资源服务读取；`_headers` 由 `public/_headers` 构建时复制过去 |
 
-### 自定义域名
+> 实测（`wrangler dev`）：`✨ Parsed 5 valid header rules`，
+> `/assets/*` → `Cache-Control: public, max-age=31536000, immutable`，
+> `/` → `max-age=0, must-revalidate`，安全头（`nosniff` / `X-Frame-Options` / `Referrer-Policy`）均生效，
+> 未知路径返回 200（SPA 回退）。
 
-Pages 项目 → **Custom domains** → Add a custom domain。
-- 域名已托管在 Cloudflare：一键绑定，自动签发证书；
-- 域名在别处：按提示到域名商加 `CNAME` 指向 `weilin-prompt-web.pages.dev`。
-- 想挂在子路径（如 `example.com/tools/`）：本项目 `base: './'` 用相对路径，直接反代到该路径即可，无需改配置。
+## 路径 A：Cloudflare 控制台 · Git 集成（推荐）
 
-### 构建失败的常见原因
+1. 打开 **https://dash.cloudflare.com** → **Workers & Pages** → **Create application**
+2. 选 **Workers** 标签 → **Connect to Git**（新版界面为 *Import a repository*）
+3. 授权 GitHub：首次会安装 *Cloudflare Workers* GitHub App
+   - 选 **Only select repositories** → 勾选 `weilin-prompt-web`（私有仓库必须勾）
+4. 填构建配置：
 
-| 报错 | 处理 |
-|---|---|
-| `npm ci` 报 `` `npm ci` can only install packages when your package.json and package-lock.json are in sync. Missing: @rollup/rollup-xxx from lock file `` | 锁文件缺「平台可选依赖」（本仓库 2026-10 遇到过一次：只有 19/25 个 `@rollup/rollup-*`）。修复：`npm install --package-lock-only --no-audit --no-fund` 后提交 `package-lock.json`；本地先用 `npm run check-lock` 体检 |
-| `npm ci` 报 lock 与 package.json 版本/依赖不一致 | 同上，重新生成锁文件后提交 |
-| `Cannot find module 'vite'` / Node 版本错误 | 设 `NODE_VERSION=22` |
-| 部署成功但页面白屏、控制台 404 | Build output directory 不是 `dist`，或 Root directory 填错了 |
-| GitHub 仓库列表里找不到自己的仓库 | 到 GitHub → Settings → Applications → Cloudflare Pages 里把该仓库加进授权范围 |
+   | 界面字段 | 填什么 |
+   |---|---|
+   | Project name | `weilin-prompt-web` |
+   | Production branch | `main` |
+   | Build command | `npm ci && npm run build` |
+   | Deploy command | `npx wrangler deploy`（默认值即是，`wrangler.jsonc` 会自动被读取） |
+   | Root directory | 留空（仓库根目录） |
+   | Environment variables | `NODE_VERSION` = `22`（Vite 6 需要 Node 18+；显式指定避免平台默认值变化） |
 
----
+5. **Save and Deploy**。之后：
 
-## 路径 B：CLI 直传（不想接 CI 时最快）
+   - 推送到 `main` → 自动构建 + 部署（生产）
+   - 其他分支 / PR → 自动生成 **preview URL**（用来验收）
+   - 回滚：Worker 详情 → **Deployments** → 选历史版本 → **Rollback**
+
+## 路径 B：本地 wrangler CLI
 
 ```bash
 cd weilin-prompt-web
 npm ci
-npm run build
 
-# 首次会让你登录（OAuth 打开浏览器）
-npx wrangler pages deploy dist --project-name=weilin-prompt-web
-# 也可以直接： npm run deploy:cf
+# 首次登录（浏览器 OAuth）
+npx wrangler login
+
+# 构建 + 部署（脚本已串好：npm run build && wrangler deploy）
+npm run deploy:cf
+
+# 只校验配置、不上传
+npm run check:cf          # = wrangler deploy --dry-run
+
+# 本地预览（Worker 运行时 + 真实静态资源，含 _headers / SPA 回退）
+npm run dev:cf            # = wrangler dev
 ```
 
-- 不想登录交互式 OAuth，可用 API Token：
-  ```bash
-  export CLOUDFLARE_API_TOKEN=xxx        # 权限：Cloudflare Pages: Edit
-  export CLOUDFLARE_ACCOUNT_ID=xxx
-  npx wrangler pages deploy dist --project-name=weilin-prompt-web
-  ```
-- 也可以在本地预览 Pages 行为：`npx wrangler pages dev dist`
+CI / 无浏览器环境下可用 API Token：
 
-## 单文件版（可选）
+```bash
+export CLOUDFLARE_API_TOKEN=xxx     # 权限：Workers Scripts: Edit
+export CLOUDFLARE_ACCOUNT_ID=xxx
+npm run deploy:cf
+```
 
-`npm run build:single` 产出一个自包含的 `dist-single/index.html`（约 460 KB）。
-适合：丢到任意静态托管、内网分享、或让人直接下载后双击打开（`file://` 下 IndexedDB 也能用）。
-Pages 上更推荐多文件版（`dist`），因为 `index.html` 与 `assets/*` 能分开缓存。
+## 自定义域名
 
----
+Worker 详情 → **Settings → Domains & Routes → Add → Custom domain**：
+
+- 域名已托管在 Cloudflare：一键绑定并自动签发证书；
+- 域名在别处：按提示加 `CNAME` 指向 `<worker>.<account>.workers.dev`；
+- 想挂在子路径（如 `example.com/tools/`）：`base: './'` 用的是相对路径，反代即可，无需改配置。
+
+## 构建失败排查
+
+| 报错 | 处理 |
+|---|---|
+| ``npm ci` can only install packages when your package.json and package-lock.json are in sync. Missing: @rollup/rollup-xxx from lock file` | 锁文件缺平台可选依赖。`npm install --package-lock-only --no-audit --no-fund` 后提交 `package-lock.json`；本地先 `npm run check-lock` 体检（CI 已前置该检查） |
+| `Cannot find module 'vite'` / Node 版本错误 | 设 `NODE_VERSION=22` |
+| 部署成功但页面白屏、控制台 404 | 构建命令没产出 `dist`，或 `wrangler.jsonc` 里 `assets.directory` 不是 `./dist` |
+| `wrangler deploy` 报没有配置 | 确认仓库根目录有 `wrangler.jsonc`，且 Deploy command 是 `npx wrangler deploy` |
+| 仓库列表里找不到自己的仓库 | GitHub → Settings → Applications → Cloudflare Workers → 把该仓库加入授权范围 |
+
+## 与 GitHub Release 的关系（互不冲突）
+
+| 流程 | 触发 | 做什么 |
+|---|---|---|
+| `.github/workflows/ci.yml` | 任意分支推送 / PR | 只测试 + 双形态构建（npm 11 严格安装 + 锁文件体检 + 版本号一致性） |
+| `.github/workflows/release.yml` | `main` 上打 `v*.*.*` 标签 | 测试 → 构建 → 打 GitHub Release（多文件 zip / 单文件 html / 校验和） |
+| **Cloudflare（wrangler）** | 推送到生产分支 `main`（Git 集成）或手动 `npm run deploy:cf` | 部署整站 |
+
+日常推 `main` 就会更新线上站点；想留一个可下载的版本快照时再打标签发 Release。
 
 ## 部署后请留意
 
@@ -103,61 +117,37 @@ Pages 上更推荐多文件版（`dist`），因为 `index.html` 与 `assets/*` 
 
 数据在浏览器本地，站点本身不带词库。访问者第一次打开需要：
 
-1. 本地用导入工具把自己的原插件数据转成数据包：
+1. 本地用自己的原插件数据生成数据包：
    ```bash
    python3 tools/import_weilin_db.py --plugin-root "/path/to/WeiLin-Comfyui-Tools" \
        --out weilin-data-zh_CN.json
    ```
-2. 打开站点 →「数据导入导出」→ 选择该文件导入。
+2. 打开站点 →「数据导入导出」→ 选择该文件导入（14 万余条约 30 秒），并点「申请持久化存储」。
 
-如果你想**让站点自带一套默认词库**（新访客打开就有标签，无需自己导入），有两种做法，需要改动代码：
+想让**站点自带默认词库**（新访客打开即有标签）需要改代码，两种做法：
 
-- **方案 1（推荐）**：把数据包放进 `public/`（如 `public/weilin-default.json`），在数据页加一个「加载站点默认词库」按钮，
-  用 `fetch('./weilin-default.json')` 取回后调用现有的 `importBundle()`；
-- **方案 2**：首次访问时自动导入（需要判断是否已导入过，并在数据页给出「清除」入口）。
+- **方案 1（推荐）**：把数据包放进 `public/`（如 `public/weilin-default.json`），数据页加一个「加载站点默认词库」按钮，
+  `fetch('./weilin-default.json')` 后调用现有 `importBundle()`；
+- **方案 2**：首次访问自动导入（需判断是否已导入过，并在数据页给「清除」入口）。
 
-> 注意：官方词库数据（`WeiLin-Comfyui-Tools-Prompt` 仓库）是 MIT，可随站点分发；
-> 但数据包约 12 MB（含 14 万条 danbooru 词典），首次加载会拉这个体积，建议按需拆分或只带标签库。
-> 需要的话我可以实现。
+> 官方词库数据（`WeiLin-Comfyui-Tools-Prompt` 仓库，MIT）可随站点分发；但数据包约 12 MB（含 14 万条词典），
+> 会让首次加载变重，建议只带标签库或按需拆分。
 
 ### 2. 翻译接口的跨域（CORS）
 
-站点是 HTTPS，翻译是浏览器直连第三方：
+站点是 HTTPS，翻译由访问者浏览器直连第三方：
 
 | 服务 | 部署后是否可用 |
 |---|---|
 | 有道（`aidemo.youdao.com`） | ✅ 实测可用（响应带 `Access-Control-Allow-Origin: *`） |
 | MyMemory | ✅ 实测可用 |
 | OpenAI 兼容（自建网关 / 支持 CORS 的服务） | 取决于对方是否回 CORS 头；不通时在设置里填 `代理前缀` 指向自建网关 |
-| 必应（Azure） | 需要 Azure 密钥；端点对浏览器放行 |
+| 必应（Azure） | 需 Azure 密钥；端点对浏览器放行 |
 
-请求都从访问者浏览器直接发出，**不经过你的 Cloudflare 站点**，所以不占用你的额度，也不会暴露密钥到服务端（密钥存在访问者本地 localStorage）。
+请求不经过你的 Worker，不占用额度；密钥只存在访问者本地 localStorage。
 
 ### 3. 其他
 
-- **HTTPS 是必须的**（IndexedDB 的持久化存储申请、剪贴板 API 需要安全上下文）。Pages 默认 HTTPS ✓；
-  如果只是本地测试，`http://127.0.0.1` 也算安全上下文。
-- **自定义域名**：Pages 项目 → Custom domains 绑定即可；`vite.config.js` 里 `base: './'` 用的是相对路径，
-  部署在根域或子路径（如 `example.com/tools/`）都能正常加载资源。
-- **不要把 `dist-single/index.html` 当唯一入口**再配一套反向代理，没必要——直接部署 `dist/`。
-
-## 与 GitHub Release 的关系
-
-仓库里有两套流程，互不冲突：
-
-| 流程 | 触发 | 做什么 |
-|---|---|---|
-| `.github/workflows/ci.yml` | 任意分支推送 / PR | 只测试 + 双形态构建，不发布 |
-| `.github/workflows/release.yml` | `main` 上打 `v*.*.*` 标签 | 测试 → 构建 → 打 GitHub Release（多文件 zip / 单文件 html / 校验和） |
-| Cloudflare Pages | 推送到生产分支 `main` | 自动部署整站（与版本标签无关） |
-
-也就是说：**日常推 `main` 就会更新站点**；想留一个可下载的版本快照时再打标签。
-
-## 排错
-
-| 现象 | 原因 / 处理 |
-|---|---|
-| 页面白屏、控制台 404 `assets/xxx.js` | 输出目录填错（应为 `dist`），或站点被挂在子路径且改了 `base`；保持 `base: './'` 即可 |
-| 发版后界面没更新 | 检查 `_headers` 是否随构建产物上传（`dist/_headers` 是否存在）；确保 `/index.html` 是 `must-revalidate` |
-| 刷新某个页面 404 | 不应该发生（hash 路由）；若你手动改成了 history 路由，需要加 `_redirects`：`/* /index.html 200` |
-| 导入数据包失败/很慢 | 数据包有 10+ MB，属正常（导出流程实测约 30s 写入 14.5 万条）；建议本地导入一次后靠浏览器持久化保存，并在数据页点「申请持久化存储」 |
+- **HTTPS 是必须的**（IndexedDB 持久化申请、剪贴板 API 需要安全上下文）——Cloudflare 默认 HTTPS ✓
+- 静态资源带内容哈希，配合 `_headers` 的长缓存策略，发版后不会出现"旧 bundle 卡住"的问题
+- 部署产物与 GitHub Release 里的 `*-multi.zip` 内容一致（同一个 `dist/`）

@@ -2,8 +2,18 @@
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "weilin-prompt-web",
   "compatibility_date": "2026-10-06",
+
+  // 纯静态站点：把 `npm run build` 的产物 dist/ 作为 Workers 静态资源发布，
+  // 不需要 main 入口脚本（没有服务端逻辑，数据都在访问者浏览器的 IndexedDB 里）。
   "assets": {
     "directory": "./dist",
+    // 客户端是 hash 路由（/#/editor），这里只是兜底：未知路径一律回 index.html
     "not_found_handling": "single-page-application"
   }
+
+  // 说明：
+  // - dist/_headers 与 dist/_redirects（若存在）会被静态资源服务读取；
+  //   _headers 由 public/_headers 在构建时复制到 dist/。
+  // - 部署前必须先构建：npm run build（或直接用 npm run deploy:cf / dev:cf / check:cf）
+  // - 本地预览：npm run dev:cf    校验配置（不上传）：npm run check:cf
 }

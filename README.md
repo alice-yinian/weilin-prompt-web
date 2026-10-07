@@ -62,22 +62,30 @@ git tag -a v0.3.3 -m "v0.3.3" && git push github v0.3.3
 
 发布说明自动取自 `CHANGELOG.md` 中对应版本的段落。流水线用 `actions/checkout@v7` / `setup-node@v7` / `upload-artifact@v7`（Node 24 运行时）。
 
-## 部署（例如 Cloudflare Pages）
+## 部署（Cloudflare · wrangler / Workers 静态资源）
 
-纯静态站点，构建命令 `npm run build`，输出目录 `dist`；hash 路由，不需要 SPA 回退规则。
+纯静态站点，Cloudflare 侧统一走 **wrangler**：`npm run build` 产出 `dist/`，由根目录的
+`wrangler.jsonc` 作为 **Workers 静态资源**发布（无服务端逻辑、无需 D1/KV/R2）。
+客户端是 hash 路由，`not_found_handling: single-page-application` 只是兜底。
 
 ```bash
-npm ci && npm run build
-npx wrangler pages deploy dist --project-name=weilin-prompt-web   # 或 npm run deploy:cf
+npm ci
+npm run deploy:cf     # = npm run build && wrangler deploy
+npm run check:cf      # 只校验配置，不上传（wrangler deploy --dry-run）
+npm run dev:cf        # 本地 Worker 运行时预览（含 _headers 与 SPA 回退）
 ```
 
-完整步骤（Git 集成 / CLI / 缓存头 / 自定义域名 / 想让站点自带默认词库 / 排错）见
+控制台 Git 集成：Workers & Pages → Create → **Workers** → Connect to Git，
+构建命令 `npm ci && npm run build`，部署命令 `npx wrangler deploy`（默认值）。
+
+完整步骤（控制台字段 / CLI / API Token / 自定义域名 / 缓存头 / 想让站点自带默认词库 / 排错）见
 **[docs/DEPLOY-CLOUDFLARE.md](./docs/DEPLOY-CLOUDFLARE.md)**。
 
 ## 与原插件的差异
 
-详见 [NOTICE.md](./NOTICE.md)：LoRA 标签统一为 4 字段（兼容解析 3 字段）、隐藏标签的匹配策略更可预期、
-不提供标签预览图生成 / LoRA 文件扫描 / 云仓库 / AI 对话等依赖服务端与本地文件系统的功能。
+详见 [NOTICE.md](./NOTICE.md) 与 [SECURITY.md](./SECURITY.md)：**不含任何 LoRA 相关功能**、
+标签预览图改为用户上传（上游依赖 ComfyUI 生成）、不提供 LoRA 文件扫描 / 云仓库 / AI 对话等
+依赖服务端与本地文件系统的功能。
 
 ## 相关仓库与致谢
 

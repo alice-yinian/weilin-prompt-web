@@ -10,6 +10,12 @@
 - 新增 [SECURITY.md](./SECURITY.md)：记录已修项与**已知但暂不处理**的告警
   （`braces` 通过 `vite-plugin-singlefile → micromatch` 引入，上游无修复版本、仅构建期、本仓库不可触发）
 
+### 变更
+
+- **Cloudflare 部署统一为 wrangler / Workers 静态资源**：`wrangler.jsonc` 为唯一配置源，
+  脚本改为 `deploy:cf`（构建 + 部署）、`check:cf`（dry-run 校验）、`dev:cf`（本地 Worker 运行时预览）；
+  文档与 README 同步改为 wrangler 口径（Pages 相关说明移出）
+
 ### 修复
 
 - 锁定文件补齐平台可选依赖（`@rollup/rollup-*` 19 → 25 个），修复 Cloudflare 构建 `npm ci` 失败；
